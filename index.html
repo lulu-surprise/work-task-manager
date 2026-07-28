@@ -969,7 +969,10 @@
                     loginContainer.classList.add('hidden');
                     setTimeout(() => { if (typeof adjustRowHeights === 'function') adjustRowHeights(); }, 50);
                 } else {
-                    const { data, error } = await supabaseClient.auth.signUp(credentials);
+                    const { data, error } = await supabaseClient.auth.signUp({
+                        ...credentials,
+                        options: { emailRedirectTo: 'https://yanglu970608-bit.github.io/work-task-manager/' }
+                    });
                     if (error) throw error;
                     if (data.session && data.user) {
                         await loadUserData(data.user);
