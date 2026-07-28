@@ -8,8 +8,9 @@
 2. 打开 SQL Editor，执行 `supabase-schema.sql`。
 3. 打开 Project Settings → API，把 Project URL 和 anon/public key 填入 `supabase-config.js`。
 4. Authentication → URL Configuration 中添加 GitHub Pages 地址作为 Site URL 和 Redirect URL。
-5. 将代码推送到 GitHub 的 `main` 分支。
-6. GitHub 仓库 Settings → Pages → Source 选择 GitHub Actions。
+5. 如需手机号注册，在 Authentication → Sign In / Providers → Phone 中配置短信服务商（如 Twilio），启用 Phone 和 phone confirmations。
+6. 将代码推送到 GitHub 的 `main` 分支。
+7. GitHub 仓库 Settings → Pages → Source 选择 GitHub Actions。
 
 ## 本地使用
 
