@@ -374,10 +374,9 @@
                 <div class="auth-form-wrap">
                 <div class="auth-heading text-center"><h2 class="font-bold text-[#171A1D]" id="auth-title">欢迎回来！</h2><p>请输入你的账号信息</p></div>
                 <form id="auth-form" novalidate onsubmit="event.preventDefault(); window.login();">
-                    <div class="auth-field"><label>邮箱 / 手机号</label><input id="auth-account" type="text" required autocomplete="username" placeholder="请输入邮箱或手机号（手机号含国家代码）"></div>
+                    <div class="auth-field"><label>邮箱</label><input id="auth-account" type="email" required autocomplete="email" placeholder="请输入邮箱"></div>
                     <div class="auth-field" id="auth-password-field"><label>密码</label><input id="auth-password" type="password" required minlength="6" autocomplete="current-password" placeholder="请输入密码"><button class="auth-eye" type="button" aria-label="显示密码" onclick="window.togglePasswordVisibility()"><i class="far fa-eye"></i></button></div>
-                    <div class="auth-field hidden" id="auth-otp-field"><label>短信验证码</label><input id="auth-otp" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="请输入 6 位短信验证码"></div>
-                    <div class="auth-error" id="auth-error">请输入有效邮箱或手机号，密码至少需要 6 位</div>
+                    <div class="auth-error" id="auth-error">请输入有效邮箱，密码至少需要 6 位</div>
                     <div class="auth-options"><label class="flex items-center gap-2"><input type="checkbox"> 30 天内记住我</label><a>忘记密码？</a></div>
                     <button type="submit" id="auth-submit-btn" class="auth-submit">登 录</button>
                     <div class="auth-toggle"><span id="auth-toggle-prefix">还没有账号？</span> <span onclick="window.toggleAuthMode()" id="auth-toggle-text">立即注册</span></div>
@@ -676,12 +675,8 @@
     <script>
         /* --- 登录与登出逻辑 --- */
         let isLoginMode = true;
-        let pendingPhoneVerification = '';
         window.toggleAuthMode = function() {
             isLoginMode = !isLoginMode;
-            pendingPhoneVerification = '';
-            document.getElementById('auth-otp').value = '';
-            document.getElementById('auth-otp-field').classList.add('hidden');
             document.getElementById('auth-title').innerText = isLoginMode ? '欢迎回来！' : '创建账号';
             document.getElementById('auth-submit-btn').innerText = isLoginMode ? '登 录' : '注 册';
             document.getElementById('auth-toggle-prefix').innerText = isLoginMode ? '还没有账号？' : '已经有账号？';
@@ -697,8 +692,6 @@
         const authArt = document.getElementById('auth-art');
         const authAccount = document.getElementById('auth-account');
         const authPassword = document.getElementById('auth-password');
-        const authOtp = document.getElementById('auth-otp');
-        const authOtpField = document.getElementById('auth-otp-field');
         const authError = document.getElementById('auth-error');
         const authPasswordField = document.getElementById('auth-password-field');
         const loginContainer = document.getElementById('login-container');
@@ -880,23 +873,17 @@
             const button = document.getElementById('auth-submit-btn');
             button.disabled = busy;
             button.style.opacity = busy ? '.65' : '1';
-            button.innerText = busy ? '请稍候…' : (pendingPhoneVerification ? '验证并完成注册' : (isLoginMode ? '登 录' : '注 册'));
+            button.innerText = busy ? '请稍候…' : (isLoginMode ? '登 录' : '注 册');
         }
 
-        function parseAuthAccount(value) {
-            const account = value.trim();
-            if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(account)) return { type: 'email', value: account.toLowerCase() };
-            let phone = account.replace(/[\s()-]/g, '');
-            if (/^1\d{10}$/.test(phone)) phone = `+86${phone}`;
-            if (phone.startsWith('00')) phone = `+${phone.slice(2)}`;
-            return /^\+[1-9]\d{7,14}$/.test(phone) ? { type: 'phone', value: phone } : null;
+        function parseAuthEmail(value) {
+            const email = value.trim().toLowerCase();
+            return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : '';
         }
 
         function getFriendlyAuthError(error) {
             const message = error && error.message ? error.message : '';
-            if (/unsupported phone provider/i.test(message)) return '手机号注册尚未启用，请先在 Supabase 配置短信服务';
-            if (/invalid login credentials/i.test(message)) return '账号或密码错误，请检查后重试';
-            if (/phone.*invalid|invalid.*phone/i.test(message)) return '手机号格式不正确，请填写国家代码，例如 +8613812345678';
+            if (/invalid login credentials/i.test(message)) return '邮箱或密码错误，请检查后重试';
             return message || '登录失败，请重试';
         }
 
@@ -960,11 +947,11 @@
         }
 
         window.handleAuthSubmit = async function() {
-            const identity = parseAuthAccount(authAccount.value);
+            const email = parseAuthEmail(authAccount.value);
             const password = authPassword.value;
             authError.classList.remove('show'); authPasswordField.classList.remove('has-error');
-            if (!identity || password.length < 6) {
-                setAuthState('error-active'); showAuthMessage('请输入有效邮箱或手机号，密码至少需要 6 位', true);
+            if (!email || password.length < 6) {
+                setAuthState('error-active'); showAuthMessage('请输入有效邮箱，密码至少需要 6 位', true);
                 setTimeout(() => setAuthState('password-active'), 650);
                 return;
             }
@@ -974,24 +961,7 @@
             }
             setAuthBusy(true);
             try {
-                if (pendingPhoneVerification) {
-                    const token = authOtp.value.trim();
-                    if (identity.type !== 'phone' || identity.value !== pendingPhoneVerification || !/^\d{6}$/.test(token)) {
-                        showAuthMessage('请保持原手机号不变，并输入收到的 6 位短信验证码', true);
-                        return;
-                    }
-                    const { data, error } = await supabaseClient.auth.verifyOtp({ phone: pendingPhoneVerification, token, type: 'sms' });
-                    if (error) throw error;
-                    pendingPhoneVerification = '';
-                    authOtpField.classList.add('hidden');
-                    await loadUserData(data.user);
-                    loginContainer.classList.add('hidden');
-                    return;
-                }
-
-                const credentials = identity.type === 'email'
-                    ? { email: identity.value, password }
-                    : { phone: identity.value, password };
+                const credentials = { email, password };
                 if (isLoginMode) {
                     const { data, error } = await supabaseClient.auth.signInWithPassword(credentials);
                     if (error) throw error;
@@ -1004,11 +974,6 @@
                     if (data.session && data.user) {
                         await loadUserData(data.user);
                         loginContainer.classList.add('hidden');
-                    } else if (identity.type === 'phone') {
-                        pendingPhoneVerification = identity.value;
-                        authOtpField.classList.remove('hidden');
-                        authOtp.focus();
-                        showAuthMessage('验证码已发送，请输入短信中的 6 位验证码', false);
                     } else {
                         showAuthMessage('注册成功，请打开邮箱完成验证后再登录', false);
                     }
