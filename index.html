@@ -851,6 +851,12 @@
         let supabaseClient = null;
         let currentUser = null;
         let cloudSaveTimer = null;
+        let cloudSyncTimer = null;
+        let isCloudSaving = false;
+        let isCloudRefreshing = false;
+        let localChangeVersion = 0;
+        let savedChangeVersion = 0;
+        let lastCloudSnapshot = '';
 
         function defaultUserData() {
             return { tasks: [], notes: [], folders: [{ id: 'default', name: '我的笔记' }] };
@@ -899,29 +905,116 @@
         }
 
         async function pushCloudData() {
+            cloudSaveTimer = null;
             if (!supabaseClient || !currentUser) return;
-            const { error } = await supabaseClient.from('user_data').upsert({
-                user_id: currentUser.id,
-                data: getUserDataSnapshot(),
-                updated_at: new Date().toISOString()
-            }, { onConflict: 'user_id' });
+            if (isCloudSaving) {
+                cloudSaveTimer = setTimeout(pushCloudData, 500);
+                return;
+            }
+            const userId = currentUser.id;
+            const changeVersion = localChangeVersion;
+            const snapshot = getUserDataSnapshot();
+            isCloudSaving = true;
+            let savedRow = null;
+            let error = null;
+            try {
+                const result = await supabaseClient.from('user_data').upsert({
+                    user_id: userId,
+                    data: snapshot,
+                    updated_at: new Date().toISOString()
+                }, { onConflict: 'user_id' }).select('data').single();
+                savedRow = result.data;
+                error = result.error;
+            } catch (syncError) {
+                error = syncError;
+            }
+            isCloudSaving = false;
+            if (!currentUser || currentUser.id !== userId) return;
             const status = document.getElementById('save-status');
             if (status) status.innerText = error ? '云端同步失败' : '已同步';
-            if (error) console.error('Supabase sync failed:', error.message);
+            if (error) {
+                console.error('Supabase sync failed:', error.message);
+                if (!cloudSaveTimer) cloudSaveTimer = setTimeout(pushCloudData, 3000);
+                return;
+            }
+            savedChangeVersion = Math.max(savedChangeVersion, changeVersion);
+            lastCloudSnapshot = JSON.stringify(savedRow && savedRow.data ? savedRow.data : snapshot);
+            if (localChangeVersion > savedChangeVersion && !cloudSaveTimer) cloudSaveTimer = setTimeout(pushCloudData, 500);
         }
 
         function queueCloudSave() {
+            localChangeVersion += 1;
             clearTimeout(cloudSaveTimer);
             cloudSaveTimer = setTimeout(pushCloudData, 500);
         }
 
+        function refreshOpenNoteEditorFromCloud() {
+            const editorView = document.getElementById('note-editor-view');
+            if (!currentNoteId || !editorView || editorView.classList.contains('hidden')) return;
+            const note = DB.notes.find(item => item.id === currentNoteId);
+            if (!note) {
+                currentNoteId = null;
+                editorView.classList.add('hidden');
+                document.getElementById('note-list-view').classList.remove('hidden');
+                return;
+            }
+            const titleInput = document.getElementById('note-title-input');
+            const contentArea = document.getElementById('note-content-area');
+            if (titleInput) titleInput.value = note.title || '';
+            if (contentArea) contentArea.innerHTML = note.content || '';
+        }
+
+        async function refreshCloudData() {
+            if (!supabaseClient || !currentUser || isCloudRefreshing || isCloudSaving || cloudSaveTimer || localChangeVersion !== savedChangeVersion) return;
+            const userId = currentUser.id;
+            const refreshVersion = localChangeVersion;
+            isCloudRefreshing = true;
+            try {
+                const { data, error } = await supabaseClient.from('user_data').select('data').eq('user_id', userId).maybeSingle();
+                if (error) throw error;
+                if (!currentUser || currentUser.id !== userId || !data || !data.data) return;
+                if (isCloudSaving || cloudSaveTimer || localChangeVersion !== refreshVersion) return;
+                const remoteSnapshot = JSON.stringify(data.data);
+                if (remoteSnapshot === lastCloudSnapshot) return;
+                applyUserData(data.data);
+                lastCloudSnapshot = remoteSnapshot;
+                localStorage.setItem(`user_data_${userId}`, JSON.stringify(getUserDataSnapshot()));
+                refreshUserViews();
+                refreshOpenNoteEditorFromCloud();
+                const status = document.getElementById('save-status');
+                if (status) status.innerText = '已从云端更新';
+            } catch (error) {
+                console.error('Supabase refresh failed:', error.message);
+            } finally {
+                isCloudRefreshing = false;
+            }
+        }
+
+        function startCloudSync() {
+            clearInterval(cloudSyncTimer);
+            cloudSyncTimer = setInterval(() => { if (!document.hidden) refreshCloudData(); }, 5000);
+        }
+
+        function stopCloudSync() {
+            clearInterval(cloudSyncTimer);
+            cloudSyncTimer = null;
+        }
+
+        window.addEventListener('focus', refreshCloudData);
+        document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshCloudData(); });
+
         async function loadUserData(user) {
+            stopCloudSync();
             currentUser = user;
+            localChangeVersion = 0;
+            savedChangeVersion = 0;
+            lastCloudSnapshot = '';
             const localKey = `user_data_${user.id}`;
             const { data, error } = await supabaseClient.from('user_data').select('data').eq('user_id', user.id).maybeSingle();
             if (error) throw error;
             if (data && data.data) {
                 applyUserData(data.data);
+                lastCloudSnapshot = JSON.stringify(data.data);
             } else {
                 const cached = localStorage.getItem(localKey);
                 if (cached) {
@@ -935,6 +1028,7 @@
             }
             localStorage.setItem(localKey, JSON.stringify(getUserDataSnapshot()));
             refreshUserViews();
+            startCloudSync();
         }
 
         async function initializeBackendAuth() {
@@ -997,8 +1091,17 @@
 
         window.handleLogout = async function() {
             window.closeModal('logout-confirm-modal');
+            if (cloudSaveTimer || localChangeVersion !== savedChangeVersion) {
+                clearTimeout(cloudSaveTimer);
+                cloudSaveTimer = null;
+                await pushCloudData();
+            }
+            stopCloudSync();
             if (supabaseClient) await supabaseClient.auth.signOut();
             currentUser = null;
+            localChangeVersion = 0;
+            savedChangeVersion = 0;
+            lastCloudSnapshot = '';
             applyUserData(defaultUserData());
             setTimeout(() => {
                 loginContainer.classList.remove('hidden');
