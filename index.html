@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>个人空间站 V8.1 (表头固定完美版)</title>
+    <title>LU任务管理器</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="./supabase-config.js"></script>
@@ -314,7 +314,7 @@
         .auth-art.error-active .character-purple { --state-tilt: -10deg; } .auth-art.error-active .character-black { --state-tilt: 9deg; } .auth-art.error-active .character-orange { --state-tilt: -4deg; } .auth-art.error-active .character-yellow { --state-tilt: 7deg; }
         .auth-art.error-active { --eye-x: -4px; --eye-y: 3px; }
         .auth-art.error-active .character-yellow .mouth { transform: rotate(-12deg); }
-        @keyframes characterError { 0%,100% { margin-left: 0; } 20% { margin-left: -11px; } 40% { margin-left: 9px; } 60% { margin-left: -6px; } 80% { margin-left: 4px; } }
+        @keyframes characterError { 0%,100% { margin-left: 0; } 20% { margin-left: -18px; } 40% { margin-left: 15px; } 60% { margin-left: -10px; } 80% { margin-left: 7px; } }
         .auth-field.has-error input { border-color: #ef4444; box-shadow: 0 0 0 3px rgba(239,68,68,.14); }
         .auth-error { min-height: 18px; margin: -13px 0 8px; color: #ef4444; font-size: 12px; opacity: 0; transform: translateY(-3px); transition: .2s; }
         .auth-error.show { opacity: 1; transform: translateY(0); }
@@ -329,14 +329,16 @@
         .character-orange .face-mouth { width: 25px; height: 12px; left: 52%; top: 51%; background: transparent; border-bottom: 7px solid #25282d; border-radius: 0 0 24px 24px; }
         .character-yellow .mouth { transform: translate(calc(var(--face-x) + var(--state-face-x)), calc(var(--face-y) + var(--state-face-y))); transition: transform .4s cubic-bezier(.34,1.56,.64,1); }
         .auth-art.is-entering .auth-character { transform-origin: 50% 100%; }
-        @keyframes characterEnter { 0% { transform: scaleY(.06); opacity: 0; } 68% { transform: scaleY(1.08); opacity: 1; } 84% { transform: scaleY(.97); opacity: 1; } 100% { transform: scaleY(1); opacity: 1; } }
-        .auth-art.email-active .character-purple { --state-skew: -10deg; --state-face-x: 5px; --state-face-y: 3px; transform: translateX(var(--body-x)) skewX(calc(var(--body-skew) + var(--state-skew))); }
-        .auth-art.email-active .character-black { --state-skew: -5deg; --state-face-x: 5px; --state-face-y: 2px; transform: translateX(var(--body-x)) skewX(calc(var(--body-skew) + var(--state-skew))); }
-        .auth-art.email-active .character-orange, .auth-art.email-active .character-yellow { --state-face-x: 5px; --state-face-y: 1px; }
-        .auth-art.password-active .character-purple { --state-skew: 7deg; --state-face-x: 3px; transform: translateX(var(--body-x)) skewX(calc(var(--body-skew) + var(--state-skew))); }
-        .auth-art.password-active .character-black { --state-skew: 4deg; --state-face-x: 3px; transform: translateX(var(--body-x)) skewX(calc(var(--body-skew) + var(--state-skew))); }
-        .auth-art.password-active .character-orange, .auth-art.password-active .character-yellow { --state-face-x: 3px; }
-        .auth-art.error-active .character-purple { --state-skew: -11deg; } .auth-art.error-active .character-black { --state-skew: 10deg; } .auth-art.error-active .character-orange { --state-skew: -5deg; } .auth-art.error-active .character-yellow { --state-skew: 7deg; }
+        @keyframes characterEnter { 0% { transform: scaleY(.02); opacity: 0; } 58% { transform: scaleY(1.16); opacity: 1; } 76% { transform: scaleY(.92); opacity: 1; } 90% { transform: scaleY(1.05); opacity: 1; } 100% { transform: scaleY(1); opacity: 1; } }
+        .auth-art.email-active .character-purple { --state-skew: -14deg; --state-face-x: 9px; --state-face-y: 5px; transform: translateX(var(--body-x)) skewX(calc(var(--body-skew) + var(--state-skew))); }
+        .auth-art.email-active .character-black { --state-skew: -8deg; --state-face-x: 8px; --state-face-y: 4px; transform: translateX(var(--body-x)) skewX(calc(var(--body-skew) + var(--state-skew))); }
+        .auth-art.email-active .character-orange { --state-skew: -4deg; --state-face-x: 7px; --state-face-y: 3px; }
+        .auth-art.email-active .character-yellow { --state-skew: -6deg; --state-face-x: 8px; --state-face-y: 3px; }
+        .auth-art.password-active .character-purple { --state-skew: 10deg; --state-face-x: 6px; transform: translateX(var(--body-x)) skewX(calc(var(--body-skew) + var(--state-skew))); }
+        .auth-art.password-active .character-black { --state-skew: 7deg; --state-face-x: 6px; transform: translateX(var(--body-x)) skewX(calc(var(--body-skew) + var(--state-skew))); }
+        .auth-art.password-active .character-orange { --state-skew: 4deg; --state-face-x: 5px; }
+        .auth-art.password-active .character-yellow { --state-skew: 5deg; --state-face-x: 6px; }
+        .auth-art.error-active .character-purple { --state-skew: -16deg; } .auth-art.error-active .character-black { --state-skew: 15deg; } .auth-art.error-active .character-orange { --state-skew: -9deg; } .auth-art.error-active .character-yellow { --state-skew: 11deg; }
         /* 最终基线约束：角色盒子不参与变换，只改变上半部轮廓 */
         .auth-characters { overflow: visible; }
         .auth-characters::after { content: ''; position: absolute; left: -2px; right: -2px; bottom: -2px; height: 4px; background: #E7E7E9; z-index: 20; pointer-events: none; }
@@ -350,7 +352,7 @@
         .auth-character.is-blinking .eye::after { opacity: 0; }
         /* 无裁剪大幅度动作：底部锚定，顶部弹性摆动 */
         .auth-art .auth-character { clip-path: none !important; transform-origin: 50% 100% !important; transition: transform .56s cubic-bezier(.34,1.7,.64,1), margin-left .5s cubic-bezier(.34,1.56,.64,1); }
-        .auth-art:not(.is-entering) .auth-character { transform: skewX(calc(var(--body-skew) + var(--state-skew))) !important; bottom: 0 !important; }
+        .auth-art:not(.is-entering) .auth-character { transform: translateX(var(--body-x)) skewX(calc(var(--body-skew) + var(--state-skew))) !important; bottom: 0 !important; }
         .auth-art .auth-character .eye { transition: transform .42s cubic-bezier(.34,1.7,.64,1), width .36s cubic-bezier(.34,1.56,.64,1); }
         .auth-character .face-mouth, .character-yellow .mouth { transition: transform .44s cubic-bezier(.34,1.7,.64,1); }
     </style>
@@ -361,7 +363,7 @@
     <div id="login-container" class="fixed inset-0 flex items-center justify-center bg-[#e9e9e9] z-[999999] transition-opacity duration-300">
         <div class="auth-shell">
             <div class="auth-art is-entering" id="auth-art" aria-hidden="true">
-                <div class="auth-brand"><span class="auth-brand-mark"><i class="fas fa-location-arrow"></i></span><span>任务管理器</span></div>
+                <div class="auth-brand"><span class="auth-brand-mark"><i class="fas fa-location-arrow"></i></span><span>LU任务管理器</span></div>
                 <div class="auth-characters">
                     <div class="auth-character character-purple"><i class="eye left"></i><i class="eye right"></i><i class="face-mouth"></i></div>
                     <div class="auth-character character-black"><i class="eye left"></i><i class="eye right"></i></div>
@@ -714,11 +716,12 @@
             const rect = loginContainer.getBoundingClientRect();
             const x = Math.max(-1, Math.min(1, (event.clientX - rect.left) / rect.width * 2 - 1));
             const y = Math.max(-1, Math.min(1, (event.clientY - rect.top) / rect.height * 2 - 1));
-            authArt.style.setProperty('--body-skew', `${-x * 9}deg`);
-            authArt.style.setProperty('--face-x', `${x * 27}px`); authArt.style.setProperty('--face-y', `${y * 17}px`);
-            authArt.style.setProperty('--pupil-x', `${x * 7}px`); authArt.style.setProperty('--pupil-y', `${y * 5.5}px`);
+            authArt.style.setProperty('--body-x', `${x * 10}px`);
+            authArt.style.setProperty('--body-skew', `${-x * 11.5}deg`);
+            authArt.style.setProperty('--face-x', `${x * 34}px`); authArt.style.setProperty('--face-y', `${y * 21}px`);
+            authArt.style.setProperty('--pupil-x', `${x * 8}px`); authArt.style.setProperty('--pupil-y', `${y * 6.5}px`);
         });
-        loginContainer.addEventListener('pointerleave', () => ['--body-skew','--face-x','--face-y','--pupil-x','--pupil-y'].forEach(name => authArt.style.removeProperty(name)));
+        loginContainer.addEventListener('pointerleave', () => ['--body-x','--body-skew','--face-x','--face-y','--pupil-x','--pupil-y'].forEach(name => authArt.style.removeProperty(name)));
         const authCharacters = [...authArt.querySelectorAll('.auth-character')];
         const scheduleBlink = () => {
             setTimeout(() => {
