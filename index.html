@@ -1,9 +1,10 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" class="auth-pending">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>LU任务管理器</title>
+    <script>setTimeout(() => { if (document.documentElement.classList.contains('auth-pending')) { document.documentElement.classList.remove('auth-pending'); document.getElementById('login-container')?.classList.remove('hidden'); } }, 5000);</script>
     <link rel="icon" type="image/svg+xml" href="./favicon.svg?v=1">
     <link rel="shortcut icon" href="./favicon.svg?v=1">
     <script src="https://cdn.tailwindcss.com"></script>
@@ -32,6 +33,8 @@
         *::-webkit-scrollbar { display: none; }
 
         html, body { height: 100%; overflow: hidden; }
+        html.auth-pending { background: #F5F7FA; }
+        html.auth-pending body { visibility: hidden; }
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; background-color: var(--ding-bg); color: #1f2937; display: flex; flex-direction: column; }
         @media (min-width: 768px) { body { flex-direction: row; } }
 
@@ -362,7 +365,7 @@
 <body>
 
     <!-- 登录/注册层 (覆盖全屏) -->
-    <div id="login-container" class="fixed inset-0 flex items-center justify-center bg-[#e9e9e9] z-[999999] transition-opacity duration-300">
+    <div id="login-container" class="hidden fixed inset-0 flex items-center justify-center bg-[#e9e9e9] z-[999999] transition-opacity duration-300">
         <div class="auth-shell">
             <div class="auth-art is-entering" id="auth-art" aria-hidden="true">
                 <div class="auth-brand"><span class="auth-brand-mark"><i class="fas fa-location-arrow"></i></span><span>LU任务管理器</span></div>
@@ -1035,14 +1038,16 @@
             const config = window.SUPABASE_CONFIG || {};
             if (!window.supabase || !config.url || !config.anonKey || config.url.includes('YOUR_')) {
                 showAuthMessage('尚未配置云端服务，请先填写 supabase-config.js', true);
-                return;
+                return false;
             }
             supabaseClient = window.supabase.createClient(config.url, config.anonKey);
             const { data: { session } } = await supabaseClient.auth.getSession();
             if (session && session.user) {
                 await loadUserData(session.user);
                 loginContainer.classList.add('hidden');
+                return true;
             }
+            return false;
         }
 
         window.handleAuthSubmit = async function() {
@@ -1867,7 +1872,10 @@
 
         /* --- DOM Ready 事件 --- */
         document.addEventListener('DOMContentLoaded', async () => {
-            try { await initializeBackendAuth(); } catch (error) { showAuthMessage(error.message || '云端服务初始化失败', true); }
+            let hasSession = false;
+            try { hasSession = await initializeBackendAuth(); } catch (error) { showAuthMessage(error.message || '云端服务初始化失败', true); }
+            if (!hasSession) loginContainer.classList.remove('hidden');
+            document.documentElement.classList.remove('auth-pending');
             initCalendar();
             window.renderNotes(); 
             setupGlobalEvents();
