@@ -69,10 +69,10 @@
         .main-content { flex: 1; position: relative; background-color: var(--ding-bg); overflow: hidden; height: 100%; display: flex; flex-direction: column; }
         .module-view { display: none !important; height: 100%; }
         #module-calendar.active { display: flex !important; flex-direction: column; animation: fadeIn 0.3s ease-out; }
-        #module-thinking.active { display: flex !important; flex-direction: column; animation: fadeIn 0.3s ease-out; }
+        #module-monthly-summary.active { display: flex !important; flex-direction: column; animation: fadeIn 0.3s ease-out; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 
-        /* --- 思考模块样式 (全面黑白化) --- */
+        /* --- 月度总结模块样式 --- */
         .note-card, .folder-card { transition: transform 0.15s, box-shadow 0.15s, border-color 0.2s; border: 2px solid transparent; user-select: none; position: relative; }
         .note-card > *, .folder-card > * { pointer-events: none; }
         .note-card:hover, .folder-card:hover { transform: translateY(-2px); box-shadow: 0 10px 20px rgba(0,0,0,0.05); border-color: #000000; }
@@ -430,8 +430,8 @@
             <div class="nav-item active" onclick="window.switchModule('calendar', this)">
                 <div class="nav-icon"><i class="fas fa-calendar-check"></i></div><span class="nav-text">工作日历</span>
             </div>
-            <div class="nav-item" onclick="window.switchModule('thinking', this)">
-                <div class="nav-icon"><i class="fas fa-book-open"></i></div><span class="nav-text">思考笔记</span>
+            <div class="nav-item" onclick="window.switchModule('monthly-summary', this)">
+                <div class="nav-icon"><i class="fas fa-chart-pie"></i></div><span class="nav-text">月度总结</span>
             </div>
         </div>
         
@@ -455,8 +455,8 @@
             <div class="mobile-nav-item active" onclick="window.switchModule('calendar', this, true)">
                 <i class="fas fa-calendar-check"></i>
             </div>
-            <div class="mobile-nav-item" onclick="window.switchModule('thinking', this, true)">
-                <i class="fas fa-book-open"></i>
+            <div class="mobile-nav-item" onclick="window.switchModule('monthly-summary', this, true)">
+                <i class="fas fa-chart-pie"></i>
             </div>
         </div>
     </div>
@@ -482,8 +482,12 @@
                      
                      <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-1 flex items-center justify-between h-14 min-h-[3.5rem] w-full flex-shrink-0 relative z-30">
                         <button id="prev-month" class="w-10 h-full flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-600"><i class="fas fa-chevron-left"></i></button>
-                        <h2 id="current-month-display" class="text-sm font-bold text-[#171A1D] px-4 text-center flex-1 whitespace-nowrap"></h2>
+                        <button id="current-month-trigger" onclick="window.toggleCalendarMonthPicker(event)" class="text-sm font-bold text-[#171A1D] px-4 text-center flex-1 whitespace-nowrap h-full rounded-lg hover:bg-gray-50 transition"><span id="current-month-display"></span></button>
                         <button id="next-month" class="w-10 h-full flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-600"><i class="fas fa-chevron-right"></i></button>
+                        <div id="calendar-month-picker" class="hidden absolute left-1/2 -translate-x-1/2 top-[3.75rem] z-40 w-[260px] rounded-2xl border border-gray-200 bg-white shadow-xl p-3">
+                            <div class="flex items-center justify-between px-2 pb-2"><button onclick="window.shiftCalendarPickerYear(-1)" class="w-7 h-7 rounded-lg hover:bg-gray-100 text-gray-500"><i class="fas fa-chevron-left text-xs"></i></button><span id="calendar-picker-title" class="text-sm font-bold text-gray-800"></span><button onclick="window.shiftCalendarPickerYear(1)" class="w-7 h-7 rounded-lg hover:bg-gray-100 text-gray-500"><i class="fas fa-chevron-right text-xs"></i></button></div>
+                            <div id="calendar-month-grid" class="grid grid-cols-3 gap-2"></div>
+                        </div>
                      </div>
 
                      <div class="flex flex-row lg:flex-col gap-3 w-full flex-shrink-0">
@@ -522,78 +526,54 @@
             </div>
         </div>
 
-        <div id="module-thinking" class="module-view h-full bg-[#F5F7FA]">
-            <div id="note-list-view" class="p-4 md:p-8 flex-1 overflow-y-auto flex flex-col h-full">
-                <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
-                    <div class="flex items-center gap-4 flex-1 w-full overflow-hidden">
-                        <div id="note-breadcrumb" class="flex items-center gap-2 text-lg md:text-xl font-bold text-[#171A1D] truncate"></div>
+        <div id="module-monthly-summary" class="module-view h-full bg-[#F5F7FA]">
+            <div class="p-4 md:p-8 flex-1 overflow-y-auto h-full">
+                <div class="max-w-6xl mx-auto">
+                    <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+                        <div>
+                            <h1 class="text-2xl font-bold text-[#171A1D]">月度总结</h1>
+                            <p class="text-sm text-gray-400 mt-1">按月份查看任务完成情况与待推进事项</p>
+                        </div>
+                        <div class="relative flex items-center bg-white border border-gray-200 rounded-xl shadow-sm overflow-visible">
+                            <button onclick="window.shiftMonthlySummaryMonth(-1)" class="w-10 h-11 flex items-center justify-center text-gray-500 hover:bg-gray-50 transition" aria-label="上个月"><i class="fas fa-chevron-left text-xs"></i></button>
+                            <button id="monthly-summary-month-trigger" onclick="window.toggleMonthlyMonthPicker(event)" class="min-w-[150px] h-11 px-4 flex items-center justify-center gap-2 text-sm font-semibold text-gray-800 hover:bg-gray-50 transition"><i class="far fa-calendar-alt text-gray-400"></i><span id="monthly-summary-month-label"></span></button>
+                            <button onclick="window.shiftMonthlySummaryMonth(1)" class="w-10 h-11 flex items-center justify-center text-gray-500 hover:bg-gray-50 transition" aria-label="下个月"><i class="fas fa-chevron-right text-xs"></i></button>
+                            <div id="monthly-summary-month-picker" class="hidden absolute right-0 top-[3.25rem] z-40 w-[260px] rounded-2xl border border-gray-200 bg-white shadow-xl p-3">
+                                <div class="flex items-center justify-between px-2 pb-2"><button onclick="window.shiftMonthlySummaryMonth(-1)" class="w-7 h-7 rounded-lg hover:bg-gray-100 text-gray-500"><i class="fas fa-chevron-left text-xs"></i></button><span id="monthly-summary-picker-title" class="text-sm font-bold text-gray-800"></span><button onclick="window.shiftMonthlySummaryMonth(1)" class="w-7 h-7 rounded-lg hover:bg-gray-100 text-gray-500"><i class="fas fa-chevron-right text-xs"></i></button></div>
+                                <div id="monthly-summary-month-grid" class="grid grid-cols-3 gap-2"></div>
+                            </div>
+                        </div>
                     </div>
-                    <div class="flex gap-3 w-full md:w-auto">
-                        <button onclick="window.startCreateFolder()" class="bg-black text-white border border-black px-3 py-2 md:px-4 md:py-2 rounded-lg hover:bg-gray-800 transition shadow-sm flex items-center gap-2 text-sm md:text-base flex-1 md:flex-initial justify-center">
-                            <i class="fas fa-folder-plus text-white"></i> 新建文件夹
-                        </button>
-                        <button onclick="window.createNewNote()" class="bg-black text-white border border-black px-3 py-2 md:px-4 md:py-2 rounded-lg hover:bg-gray-800 transition shadow-md flex items-center gap-2 text-sm md:text-base flex-1 md:flex-initial justify-center">
-                            <i class="fas fa-plus"></i> 新建笔记
-                        </button>
-                    </div>
-                </div>
-                <div id="notes-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-6 pb-20"></div>
-            </div>
 
-            <div id="note-editor-view" class="absolute inset-0 bg-white z-20 flex flex-col hidden">
-                <div class="border-b border-gray-200 p-3 flex items-center justify-between bg-white">
-                    <div class="flex items-center gap-2 md:gap-3 flex-1 overflow-hidden">
-                        <button onclick="window.closeEditor()" class="text-gray-500 hover:text-black w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-200 transition flex-shrink-0"><i class="fas fa-arrow-left"></i></button>
-                        <input type="text" id="note-title-input" placeholder="无标题笔记" class="text-lg font-bold bg-transparent border-none outline-none text-black placeholder-gray-400 w-full md:w-96 focus:ring-0">
+                    <div class="bg-black text-white rounded-2xl p-5 md:p-6 mb-5 relative overflow-hidden">
+                        <div class="absolute -right-8 -top-10 w-36 h-36 rounded-full border border-white/10"></div>
+                        <div class="absolute right-12 -bottom-16 w-28 h-28 rounded-full bg-white/5"></div>
+                        <p class="text-[11px] tracking-[0.2em] text-white/50 mb-2">MONTHLY OVERVIEW</p>
+                        <p id="monthly-summary-lead" class="text-base md:text-lg font-medium leading-relaxed relative z-10"></p>
                     </div>
-                    <div class="flex items-center gap-2 flex-shrink-0 ml-2">
-                        <span id="save-status" class="text-xs text-gray-400 mr-1 hidden md:inline"></span>
-                        <button onclick="window.deleteCurrentNote()" class="text-gray-500 hover:bg-black hover:text-white px-3 py-1.5 rounded text-sm transition font-bold whitespace-nowrap">删除</button>
+
+                    <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
+                        <div class="bg-white rounded-2xl border border-gray-100 p-4"><div class="text-xs text-gray-400 mb-2">事项总数</div><div id="monthly-summary-total" class="text-2xl font-bold text-gray-900">0</div></div>
+                        <div class="bg-white rounded-2xl border border-gray-100 p-4"><div class="text-xs text-gray-400 mb-2">已完成</div><div id="monthly-summary-completed" class="text-2xl font-bold text-gray-900">0</div></div>
+                        <div class="bg-white rounded-2xl border border-gray-100 p-4"><div class="text-xs text-gray-400 mb-2">完成率</div><div id="monthly-summary-rate" class="text-2xl font-bold text-gray-900">0%</div></div>
+                        <div class="bg-white rounded-2xl border border-gray-100 p-4"><div class="text-xs text-gray-400 mb-2">重点紧急</div><div id="monthly-summary-urgent" class="text-2xl font-bold text-red-500">0</div></div>
                     </div>
-                </div>
-                
-                <div id="editor-wrapper" class="flex-1 overflow-y-auto bg-white flex editor-container">
-                    <div id="selection-toolbar">
-                        <button onmousedown="event.preventDefault(); window.execCmd('bold')" title="加粗"><i class="fas fa-bold"></i></button>
-                        <button onmousedown="event.preventDefault(); window.execCmd('underline')" title="下划线"><i class="fas fa-underline"></i></button>
-                        <div class="toolbar-divider"></div>
-                        <button onmousedown="event.preventDefault(); window.execCmd('insertOrderedList')" title="有序列表"><i class="fas fa-list-ol"></i></button>
-                        <button onmousedown="event.preventDefault(); window.execCmd('insertUnorderedList')" title="无序列表"><i class="fas fa-list-ul"></i></button>
-                        <div class="toolbar-divider"></div>
-                        <button onmousedown="event.preventDefault(); window.execCmd('indent')" title="增加缩进"><i class="fas fa-indent"></i></button>
-                        <button onmousedown="event.preventDefault(); window.execCmd('outdent')" title="减少缩进"><i class="fas fa-outdent"></i></button>
-                        <div class="toolbar-divider"></div>
-                        <div class="relative group">
-                            <div class="custom-select-trigger" onmousedown="event.preventDefault(); window.toggleFontSizeMenu()">
-                                <span id="current-font-size">16</span>
-                                <i class="fas fa-chevron-down text-xs"></i>
-                            </div>
-                            <div class="custom-select-dropdown" id="font-size-dropdown">
-                                <div class="custom-select-option" onmousedown="event.preventDefault(); window.applyFontSize(16)">16</div>
-                                <div class="custom-select-option" onmousedown="event.preventDefault(); window.applyFontSize(18)">18</div>
-                                <div class="custom-select-option" onmousedown="event.preventDefault(); window.applyFontSize(20)">20</div>
-                                <div class="custom-select-option" onmousedown="event.preventDefault(); window.applyFontSize(22)">22</div>
-                                <div class="custom-select-option" onmousedown="event.preventDefault(); window.applyFontSize(24)">24</div>
-                                <div class="custom-select-option" onmousedown="event.preventDefault(); window.applyFontSize(26)">26</div>
-                                <div class="custom-select-option" onmousedown="event.preventDefault(); window.applyFontSize(28)">28</div>
-                                <div class="custom-select-option" onmousedown="event.preventDefault(); window.applyFontSize(30)">30</div>
-                            </div>
-                        </div>
-                        <div class="toolbar-divider"></div>
-                        <div class="relative group color-picker-container">
-                            <button class="text-gray-700 hover:text-black transition" onclick="window.toggleColorPicker(event, 'float-text-color')"><i class="fas fa-font"></i></button>
-                            <div class="color-picker-popup" id="float-text-color"></div>
-                        </div>
-                        <div class="relative group color-picker-container">
-                            <button class="text-gray-700 hover:text-black transition" onclick="window.toggleColorPicker(event, 'float-bg-color')"><i class="fas fa-highlighter"></i></button>
-                            <div class="color-picker-popup" id="float-bg-color"></div>
-                        </div>
-                        <div class="toolbar-divider"></div>
-                        <button id="toolbar-pin-btn" onclick="window.toggleToolbarPin(event)" title="固定到顶部" class="text-gray-400 hover:text-black transition">
-                            <i class="fas fa-thumbtack"></i>
-                        </button>
+
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                        <section class="bg-white rounded-2xl border border-red-100 overflow-hidden">
+                            <div class="px-5 py-4 border-b border-red-100 bg-red-50/50 flex items-center justify-between"><h2 class="font-bold text-red-600"><i class="fas fa-fire mr-2"></i>本月重点紧急事项</h2><span id="monthly-summary-urgent-count" class="text-xs text-red-400">0 项</span></div>
+                            <div id="monthly-summary-urgent-list" class="p-4 space-y-2 min-h-[120px]"></div>
+                        </section>
+                        <section class="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+                            <div class="px-5 py-4 border-b border-gray-100 flex items-center justify-between"><h2 class="font-bold text-gray-800"><i class="fas fa-clock text-amber-500 mr-2"></i>待推进事项</h2><span id="monthly-summary-pending-count" class="text-xs text-gray-400">0 项</span></div>
+                            <div id="monthly-summary-pending-list" class="p-4 space-y-2 min-h-[120px]"></div>
+                        </section>
                     </div>
-                    <div id="note-content-area" class="editor-content w-full h-full" contenteditable="true"></div>
+
+                    <section class="bg-white rounded-2xl border border-gray-100 overflow-hidden mt-5">
+                        <div class="px-5 py-4 border-b border-gray-100 flex items-center justify-between"><div><h2 class="font-bold text-gray-800">可复制月报</h2><p class="text-xs text-gray-400 mt-1">已整理为适合汇报的结构化文本</p></div><button onclick="window.copyMonthlyReport()" class="bg-black text-white rounded-xl px-4 py-2 text-sm font-medium hover:bg-gray-800 transition flex items-center gap-2"><i class="far fa-copy"></i>复制月报</button></div>
+                        <pre id="monthly-report-content" class="whitespace-pre-wrap p-5 text-sm leading-8 text-gray-800 font-sans min-h-[180px]"></pre>
+                    </section>
                 </div>
             </div>
         </div>
@@ -905,8 +885,8 @@
 
         function refreshUserViews() {
             if (typeof renderCalendarView === 'function') renderCalendarView();
-            if (typeof window.renderNotes === 'function') window.renderNotes();
             if (typeof window.renderSideTasks === 'function') window.renderSideTasks();
+            if (typeof window.renderMonthlySummary === 'function') window.renderMonthlySummary();
         }
 
         async function pushCloudData() {
@@ -953,22 +933,6 @@
             cloudSaveTimer = setTimeout(pushCloudData, 500);
         }
 
-        function refreshOpenNoteEditorFromCloud() {
-            const editorView = document.getElementById('note-editor-view');
-            if (!currentNoteId || !editorView || editorView.classList.contains('hidden')) return;
-            const note = DB.notes.find(item => item.id === currentNoteId);
-            if (!note) {
-                currentNoteId = null;
-                editorView.classList.add('hidden');
-                document.getElementById('note-list-view').classList.remove('hidden');
-                return;
-            }
-            const titleInput = document.getElementById('note-title-input');
-            const contentArea = document.getElementById('note-content-area');
-            if (titleInput) titleInput.value = note.title || '';
-            if (contentArea) contentArea.innerHTML = note.content || '';
-        }
-
         async function refreshCloudData() {
             if (!supabaseClient || !currentUser || isCloudRefreshing || isCloudSaving || cloudSaveTimer || localChangeVersion !== savedChangeVersion) return;
             const userId = currentUser.id;
@@ -985,7 +949,7 @@
                 lastCloudSnapshot = remoteSnapshot;
                 localStorage.setItem(`user_data_${userId}`, JSON.stringify(getUserDataSnapshot()));
                 refreshUserViews();
-                refreshOpenNoteEditorFromCloud();
+                if (typeof window.renderMonthlySummary === 'function') window.renderMonthlySummary();
                 const status = document.getElementById('save-status');
                 if (status) status.innerText = '已从云端更新';
             } catch (error) {
@@ -1199,6 +1163,91 @@
             document.getElementById('stat-pending').textContent = total - completed;
         }
 
+        function getMonthlySummaryTasks(monthValue) {
+            const base = monthValue ? new Date(`${monthValue}-01T00:00:00`) : new Date();
+            const year = base.getFullYear(), month = base.getMonth();
+            const monthStart = new Date(year, month, 1);
+            const monthEnd = new Date(year, month + 1, 0, 23, 59, 59);
+            return DB.tasks.filter(task => {
+                if (!task.startDate && !task.endDate) return false;
+                const start = task.startDate ? parseDateStr(task.startDate) : monthStart;
+                const end = task.endDate ? parseDateStr(task.endDate) : start;
+                end.setHours(23, 59, 59, 999);
+                return start <= monthEnd && end >= monthStart;
+            });
+        }
+
+        window.renderMonthlySummary = function(monthValue) {
+            const input = document.getElementById('monthly-summary-month');
+            const now = new Date();
+            const value = monthValue || window.monthlySummaryMonth || `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+            window.monthlySummaryMonth = value;
+            const tasks = getMonthlySummaryTasks(value);
+            const [year, month] = value.split('-').map(Number);
+            const completed = tasks.filter(task => task.completed).length;
+            const urgent = tasks.filter(task => task.isUrgent);
+            const pending = tasks.filter(task => !task.completed);
+            const rate = tasks.length ? Math.round(completed / tasks.length * 100) : 0;
+            const monthLabel = `${year}年${month}月`;
+            const monthLabelEl = document.getElementById('monthly-summary-month-label');
+            if (monthLabelEl) monthLabelEl.textContent = monthLabel;
+            const pickerTitle = document.getElementById('monthly-summary-picker-title');
+            if (pickerTitle) pickerTitle.textContent = `${year}年`;
+            const pickerGrid = document.getElementById('monthly-summary-month-grid');
+            if (pickerGrid) {
+                pickerGrid.innerHTML = Array.from({ length: 12 }, (_, index) => {
+                    const monthValueOption = `${year}-${String(index + 1).padStart(2, '0')}`;
+                    const selected = monthValueOption === value;
+                    return `<button onclick="window.renderMonthlySummary('${monthValueOption}'); window.closeMonthlyMonthPicker()" class="rounded-lg py-2 text-sm ${selected ? 'bg-black text-white' : 'text-gray-600 hover:bg-gray-100'}">${index + 1}月</button>`;
+                }).join('');
+            }
+
+            document.getElementById('monthly-summary-lead').textContent = tasks.length
+                ? `${monthLabel}共记录 ${tasks.length} 项工作，已完成 ${completed} 项，整体完成率 ${rate}%。目前还有 ${pending.length} 项需要继续推进。`
+                : `${monthLabel}暂无任务记录。`;
+            document.getElementById('monthly-summary-total').textContent = tasks.length;
+            document.getElementById('monthly-summary-completed').textContent = completed;
+            document.getElementById('monthly-summary-rate').textContent = `${rate}%`;
+            document.getElementById('monthly-summary-urgent').textContent = urgent.length;
+            document.getElementById('monthly-summary-urgent-count').textContent = `${urgent.length} 项`;
+            document.getElementById('monthly-summary-pending-count').textContent = `${pending.length} 项`;
+
+            const renderList = (id, items, emptyText, urgentStyle = false) => {
+                const list = document.getElementById(id);
+                if (!list) return;
+                list.innerHTML = items.length ? items.map(task => `<div class="flex items-center justify-between gap-3 rounded-xl border ${urgentStyle ? 'border-red-100 bg-red-50/30' : 'border-gray-100 bg-gray-50/60'} px-4 py-3"><span class="text-sm text-gray-800 break-words">${task.title || '未命名事项'}</span>${urgentStyle ? '<span class="text-[11px] text-red-400 bg-red-100 rounded-full px-2 py-0.5 flex-shrink-0">紧急</span>' : ''}</div>`).join('') : `<div class="py-8 text-center text-sm text-gray-400">${emptyText}</div>`;
+            };
+            renderList('monthly-summary-urgent-list', urgent, '本月暂无重点紧急事项', true);
+            renderList('monthly-summary-pending-list', pending, '本月暂无待推进事项');
+            const report = `${year}年${month}月\n\n${sectionText('一：本月完成重点事项', tasks.filter(task => task.completed && task.isUrgent))}\n\n${sectionText('二：本月完成其他事项', tasks.filter(task => task.completed && !task.isUrgent))}\n\n${sectionText('三：下月待办事项', pending)}`;
+            const reportEl = document.getElementById('monthly-report-content');
+            if (reportEl) reportEl.textContent = report;
+        };
+
+        function sectionText(title, items) { return `${title}\n${items.length ? items.map((task, index) => `${index + 1}. ${task.title || '未命名事项'}`).join('\n') : '暂无'}`; }
+        window.shiftMonthlySummaryMonth = function(offset) { const current = window.monthlySummaryMonth || `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`; const date = new Date(`${current}-01T00:00:00`); date.setMonth(date.getMonth() + offset); window.renderMonthlySummary(`${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`); };
+        window.toggleMonthlyMonthPicker = function(event) { if (event) event.stopPropagation(); const picker = document.getElementById('monthly-summary-month-picker'); if (picker) picker.classList.toggle('hidden'); };
+        window.closeMonthlyMonthPicker = function() { const picker = document.getElementById('monthly-summary-month-picker'); if (picker) picker.classList.add('hidden'); };
+
+        window.copyMonthlyReport = async function() {
+            const value = window.monthlySummaryMonth || `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
+            const tasks = getMonthlySummaryTasks(value);
+            const [year, month] = value.split('-').map(Number);
+            const completedUrgent = tasks.filter(task => task.completed && task.isUrgent);
+            const completedOther = tasks.filter(task => task.completed && !task.isUrgent);
+            const pending = tasks.filter(task => !task.completed);
+            const report = `${year}年${month}月\n\n${sectionText('一：本月完成重点事项', completedUrgent)}\n\n${sectionText('二：本月完成其他事项', completedOther)}\n\n${sectionText('三：下月待办事项', pending)}`;
+            const reportEl = document.getElementById('monthly-report-content');
+            if (reportEl) reportEl.textContent = report;
+            try {
+                await navigator.clipboard.writeText(report);
+                if (typeof window.showToast === 'function') window.showToast('月报已复制');
+            } catch (error) {
+                const area = document.createElement('textarea'); area.value = report; document.body.appendChild(area); area.select(); document.execCommand('copy'); area.remove();
+                if (typeof window.showToast === 'function') window.showToast('月报已复制');
+            }
+        };
+
         function getTasksInRange(s, e) { 
             const end = parseDateStr(e); end.setHours(23,59); 
             return DB.tasks.filter(t => t.startDate && t.endDate && parseDateStr(t.startDate)<=end && parseDateStr(t.endDate)>=s); 
@@ -1226,7 +1275,9 @@
             } else {
                 urgentTasks.forEach(t => {
                     const el = document.createElement('div');
-                    el.className = `side-task-card bg-white p-2.5 rounded-lg shadow-sm border border-red-200 border-l-[3px] border-l-red-500 cursor-grab hover:shadow-md transition relative group`;
+                    const today = formatDate(new Date());
+                    const isDueToday = t.endDate === today;
+                    el.className = `side-task-card ${isDueToday ? 'bg-red-50 border-red-100 border-l-[3px] border-l-red-500' : 'bg-white border-red-200 border-l-[3px] border-l-red-500'} p-2.5 rounded-lg shadow-sm cursor-grab hover:shadow-md transition relative group`;
                     
                     if (t.desc) el.setAttribute('data-desc', t.desc);
                     
@@ -1235,7 +1286,7 @@
                             <div class="font-bold text-[13px] text-gray-800 break-words leading-snug flex-1">${t.title}</div>
                             <i class="fas fa-fire text-red-500 text-[10px] flex-shrink-0 mt-0.5"></i>
                         </div>
-                        ${t.startDate ? `<div class="text-[9px] text-gray-400 mt-1.5 bg-gray-50 inline-block px-1.5 py-0.5 rounded pointer-events-none break-all"><i class="far fa-calendar-alt"></i> ${t.startDate}</div>` : ''}
+                        ${t.startDate ? `<div class="text-[9px] ${isDueToday ? 'text-red-400 bg-red-100' : 'text-gray-400 bg-gray-50'} mt-1.5 inline-block px-1.5 py-0.5 rounded pointer-events-none break-all"><i class="far fa-calendar-alt"></i> ${t.startDate}</div>` : ''}
                     `;
                     
                     el.onmousedown = (e) => {
@@ -1620,6 +1671,17 @@
         function renderCalendarView() { 
             const y=currentDate.getFullYear(), m=currentDate.getMonth(); 
             document.getElementById('current-month-display').textContent=`${y}年${m+1}月`; 
+            const pickerTitle = document.getElementById('calendar-picker-title');
+            if (pickerTitle) pickerTitle.textContent = `${y}年`;
+            const pickerGrid = document.getElementById('calendar-month-grid');
+            if (pickerGrid) {
+                const currentValue = `${y}-${String(m + 1).padStart(2, '0')}`;
+                pickerGrid.innerHTML = Array.from({ length: 12 }, (_, index) => {
+                    const monthValue = `${y}-${String(index + 1).padStart(2, '0')}`;
+                    const selected = monthValue === currentValue;
+                    return `<button onclick="window.selectCalendarMonth('${monthValue}')" class="rounded-lg py-2 text-sm ${selected ? 'bg-black text-white' : 'text-gray-600 hover:bg-gray-100'}">${index + 1}月</button>`;
+                }).join('');
+            }
             const body=document.getElementById('calendar-body'); 
             const scrollContainer = document.querySelector('.calendar-scroll-container');
             const prevScrollTop = scrollContainer ? scrollContainer.scrollTop : 0;
@@ -1646,6 +1708,26 @@
             adjustRowHeights(); 
             if (scrollContainer) scrollContainer.scrollTop = prevScrollTop;
         }
+
+        window.selectCalendarMonth = function(value) {
+            const [year, month] = value.split('-').map(Number);
+            currentDate = new Date(year, month - 1, 1);
+            renderCalendarView();
+            window.closeCalendarMonthPicker();
+        };
+        window.shiftCalendarPickerYear = function(offset) {
+            currentDate = new Date(currentDate.getFullYear() + offset, currentDate.getMonth(), 1);
+            renderCalendarView();
+        };
+        window.toggleCalendarMonthPicker = function(event) {
+            if (event) event.stopPropagation();
+            const picker = document.getElementById('calendar-month-picker');
+            if (picker) picker.classList.toggle('hidden');
+        };
+        window.closeCalendarMonthPicker = function() {
+            const picker = document.getElementById('calendar-month-picker');
+            if (picker) picker.classList.add('hidden');
+        };
 
         function initCalendar() {
             calendarToday = formatDate(new Date());
@@ -1817,8 +1899,10 @@
                 }
             };
             
-            document.addEventListener('click', (e) => {
+             document.addEventListener('click', (e) => {
                 document.getElementById('context-menu').style.display = 'none';
+                if (!e.target.closest('#monthly-summary-month-picker') && !e.target.closest('#monthly-summary-month-trigger')) window.closeMonthlyMonthPicker();
+                if (!e.target.closest('#calendar-month-picker') && !e.target.closest('#current-month-trigger')) window.closeCalendarMonthPicker();
                 const dropdown = document.getElementById('font-size-dropdown');
                 if(dropdown && dropdown.style.display === 'flex' && !dropdown.contains(e.target) && !e.target.closest('.custom-select-trigger')) dropdown.style.display = 'none';
                 document.querySelectorAll('.color-picker-popup.show').forEach(popup => { if (!popup.closest('.color-picker-container').contains(e.target)) popup.classList.remove('show'); });
@@ -1872,7 +1956,7 @@
         window.navigateDatepicker = function(id, dir, ev) { if (ev) ev.stopPropagation(); datepickerState[id].setMonth(datepickerState[id].getMonth()+dir); window.renderDatepicker(id, id.replace('task-','').replace('-date','-date-picker')); };
         window.selectDate = function(id, d) { document.getElementById(id).value=d; document.getElementById(id.replace('task-','').replace('-date','-date-picker')).classList.add('hidden'); window.saveTaskLive(); };
         window.setupGlobalDatepickerHide = function() { document.body.addEventListener('click', e=>{ if(!e.target.closest('.custom-datepicker') && !e.target.closest('[data-datepicker-container]') && !e.target.closest('.datepicker-nav-btn')) document.querySelectorAll('.custom-datepicker').forEach(p=>p.classList.add('hidden')); }); };
-        window.switchModule = function(moduleName, el, isMobile = false) { document.querySelectorAll('.nav-item, .mobile-nav-item').forEach(i => i.classList.remove('active')); el.classList.add('active'); const contents = document.querySelectorAll('.module-view'); contents.forEach(v => { v.classList.remove('active'); v.style.display = 'none'; }); const target = document.getElementById(`module-${moduleName}`); target.classList.add('active'); target.style.display = 'flex'; if (moduleName === 'thinking') document.querySelector('.main-content').style.overflowY = 'hidden'; else document.querySelector('.main-content').style.overflowY = 'auto'; if (moduleName === 'calendar') setTimeout(adjustRowHeights, 0); };
+        window.switchModule = function(moduleName, el, isMobile = false) { document.querySelectorAll('.nav-item, .mobile-nav-item').forEach(i => i.classList.remove('active')); if (el) el.classList.add('active'); const contents = document.querySelectorAll('.module-view'); contents.forEach(v => { v.classList.remove('active'); v.style.display = 'none'; }); const target = document.getElementById(`module-${moduleName}`); if (!target) return; target.classList.add('active'); target.style.display = 'flex'; document.querySelector('.main-content').style.overflowY = 'auto'; if (moduleName === 'calendar') setTimeout(adjustRowHeights, 0); if (moduleName === 'monthly-summary') window.renderMonthlySummary(); };
         window.switchFolder = function(id) { currentFolderId = id; window.renderNotes(); };
         window.goBackFolder = function() { const curr = DB.folders.find(f => f.id === currentFolderId); currentFolderId = (curr && curr.parentId) ? curr.parentId : 'default'; window.renderNotes(); };
         function getTotalNoteCount(folderId) { let count = DB.notes.filter(n => n.folderId === folderId).length; DB.folders.filter(f => f.parentId === folderId).forEach(sub => { count += getTotalNoteCount(sub.id); }); return count; }
@@ -1911,21 +1995,9 @@
             if (!hasSession) loginContainer.classList.remove('hidden');
             document.documentElement.classList.remove('auth-pending');
             initCalendar();
-            window.renderNotes(); 
             setupGlobalEvents();
             setupModalLiveSaving();
-            
-            const titleInput = document.getElementById('note-title-input'), contentArea = document.getElementById('note-content-area');
-            if(titleInput && contentArea) {
-                const autoSave = () => { if (!currentNoteId) return; const note = DB.notes.find(n => n.id === currentNoteId); if (note) { note.title = titleInput.value; note.content = contentArea.innerHTML; note.updatedAt = new Date().toISOString(); saveData(); } };
-                titleInput.addEventListener('input', autoSave); contentArea.addEventListener('input', autoSave);
-            }
-
-            const area = document.getElementById('note-content-area');
-            if(area) {
-                area.addEventListener('mouseup', window.updateToolbarPosition);
-                area.addEventListener('keyup', (e) => { if(e.key === 'Shift' || e.key.startsWith('Arrow')) window.updateToolbarPosition(); });
-            }
+            window.renderMonthlySummary();
             
             window.setupGlobalDatepickerHide();
             const colors = ['#000000', '#4B5563', '#9CA3AF', '#EF4444', '#F59E0B', '#10B981', '#3B82F6', '#6366F1', '#8B5CF6', '#EC4899', '#FFFFFF', '#F3F4F6', '#E5E7EB', '#FEE2E2', '#FEF3C7', '#D1FAE5', '#DBEAFE', '#E0E7FF', '#EDE9FE', '#FCE7F3'];

@@ -1,0 +1,2032 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="auth-pending">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LU任务管理器 - 演示版</title>
+    <script>setTimeout(() => { if (document.documentElement.classList.contains('auth-pending')) { document.documentElement.classList.remove('auth-pending'); document.getElementById('login-container')?.classList.remove('hidden'); } }, 5000);</script>
+    <link rel="icon" type="image/png" sizes="32x32" href="./favicon-32.png?v=2">
+    <link rel="icon" type="image/png" sizes="512x512" href="./favicon.png?v=2">
+    <link rel="shortcut icon" type="image/png" href="./favicon-32.png?v=2">
+    <link rel="apple-touch-icon" href="./favicon.png?v=2">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="./supabase-config.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        /* --- 全局基础样式 --- */
+        :root {
+            --ding-bg: #F5F7FA;
+            --sidebar-bg: #000000; /* 侧边栏纯黑 */
+            --sidebar-active: rgba(255, 255, 255, 0.15); 
+            
+            --theme-primary: #0089FF;
+            --theme-light: #EBF4FF;
+            --theme-highlight: #80C4FF;
+            --theme-border: #BAE6FD;
+            --theme-hover: #0073D1;
+            --theme-folder-icon: #93C5FD;
+            
+            --task-single-bg: var(--theme-light);
+            --task-multi-bg: var(--theme-light);
+        }
+
+        * { -ms-overflow-style: none; scrollbar-width: none; }
+        *::-webkit-scrollbar { display: none; }
+
+        html, body { height: 100%; overflow: hidden; }
+        html.auth-pending { background: #F5F7FA; }
+        html.auth-pending body { visibility: hidden; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; background-color: var(--ding-bg); color: #1f2937; display: flex; flex-direction: column; }
+        @media (min-width: 768px) { body { flex-direction: row; } }
+
+        /* --- 侧边栏样式 --- */
+        .sidebar { 
+            display: none; width: 240px; background-color: var(--sidebar-bg); color: white; flex-direction: column; flex-shrink: 0; transition: width 0.3s ease; position: relative; z-index: 50; overflow-x: hidden; overflow-y: auto; white-space: nowrap; 
+        }
+        @media (min-width: 768px) { .sidebar { display: flex; } }
+        .sidebar.collapsed { width: 64px; }
+        .nav-item { padding: 14px 20px; cursor: pointer; display: flex; align-items: center; color: rgba(255,255,255,0.7); transition: all 0.2s ease; border-left: 3px solid transparent; height: 50px; }
+        .nav-item:hover { background-color: rgba(255,255,255,0.1); color: white; }
+        .nav-item.active { background-color: var(--sidebar-active); color: white; border-left-color: white; font-weight: 600; }
+        .nav-icon { width: 24px; text-align: center; margin-right: 12px; font-size: 18px; flex-shrink: 0; }
+        .nav-text { transition: opacity 0.2s ease; opacity: 1; display: inline-block; vertical-align: middle; }
+        .sidebar.collapsed .nav-text { opacity: 0; pointer-events: none; } 
+        .sidebar-footer { margin-top: auto; padding: 20px; border-top: 1px solid rgba(255,255,255,0.1); display: flex; flex-direction: column; align-items: center; overflow: hidden; width: 100%; box-sizing: border-box; }
+        
+        .sidebar.collapsed .sidebar-btn-group { flex-direction: column; gap: 16px; justify-content: center; }
+        .toggle-btn { color: rgba(255,255,255,0.6); cursor: pointer; padding: 8px; border-radius: 4px; transition: background 0.2s; }
+        .toggle-btn:hover { background-color: rgba(255,255,255,0.1); color: white; }
+
+        /* --- 移动端顶部导航栏 --- */
+        .mobile-header { display: flex; align-items: center; justify-content: space-between; height: 60px; background-color: var(--sidebar-bg); color: white; padding: 0 16px; flex-shrink: 0; z-index: 60; }
+        @media (min-width: 768px) { .mobile-header { display: none; } }
+        .mobile-nav-items { display: flex; gap: 4px; }
+        .mobile-nav-item { padding: 8px 12px; border-radius: 6px; font-size: 14px; color: rgba(255,255,255,0.7); cursor: pointer; transition: all 0.2s; }
+        .mobile-nav-item.active { background-color: var(--sidebar-active); color: white; font-weight: 600; }
+
+        /* --- 内容区域样式 --- */
+        .main-content { flex: 1; position: relative; background-color: var(--ding-bg); overflow: hidden; height: 100%; display: flex; flex-direction: column; }
+        .module-view { display: none !important; height: 100%; }
+        #module-calendar.active { display: flex !important; flex-direction: column; animation: fadeIn 0.3s ease-out; }
+        #module-monthly-summary.active { display: flex !important; flex-direction: column; animation: fadeIn 0.3s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+        /* --- 月度总结模块样式 --- */
+        .note-card, .folder-card { transition: transform 0.15s, box-shadow 0.15s, border-color 0.2s; border: 2px solid transparent; user-select: none; position: relative; }
+        .note-card > *, .folder-card > * { pointer-events: none; }
+        .note-card:hover, .folder-card:hover { transform: translateY(-2px); box-shadow: 0 10px 20px rgba(0,0,0,0.05); border-color: #000000; }
+        .note-card.merge-target, .folder-card.drag-over { border: 2px dashed #000000 !important; background-color: #F3F4F6 !important; transform: scale(1.05); z-index: 20; }
+        .note-card.merge-target::after { display: none; }
+        .note-card.reorder-target-left, .folder-card.reorder-target-left { border-left: 4px solid #000000; padding-left: 18px; }
+        .note-card.reorder-target-right, .folder-card.reorder-target-right { border-right: 4px solid #000000; padding-right: 18px; }
+        .folder-card { background-color: #FAFAFA; border: 1px solid #E5E7EB; }
+        .folder-card i { color: #000000 !important; }
+        
+        #context-menu { position: fixed; background: white; border: 1px solid #E5E7EB; box-shadow: 0 4px 12px rgba(0,0,0,0.15); border-radius: 8px; width: 160px; z-index: 9999; display: none; padding: 4px 0; }
+        .context-menu-item { padding: 8px 16px; font-size: 14px; color: #374151; cursor: pointer; transition: all 0.1s; display: block; width: 100%; text-align: left; }
+        .context-menu-item:hover { background-color: #F3F4F6; color: #000000; font-weight: bold; }
+        .context-menu-item.danger { color: #000000; font-weight: bold;}
+        .context-menu-item.danger:hover { background-color: #000000; color: white;}
+
+        /* --- 编辑器样式 (全面黑白化) --- */
+        .editor-container { display: flex; flex-direction: column; height: 100%; background: white; width: 100%; position: relative; }
+        .editor-content { flex: 1; outline: none; line-height: 1.8; padding: 60px 100px 40px 100px; font-size: 16px; overflow-y: auto; margin: 0; max-width: 1000px; color: #000; }
+        @media (max-width: 768px) { .editor-content { padding: 20px 16px !important; } }
+        .editor-content ul, .editor-content ol { margin-bottom: 8px; padding-left: 28px; margin-left: 0; list-style-position: outside; }
+        .editor-content ul ul, .editor-content ol ol, .editor-content ul ol, .editor-content ol ul { border-left: 2px solid #E5E7EB; margin-left: -14px; padding-left: 28px; margin-top: 4px; }
+        .editor-content li { margin-bottom: 6px; position: relative; }
+        .editor-content img { display: inline-block; vertical-align: top; margin: 4px 0; max-width: 100%; height: auto; cursor: pointer; transition: box-shadow 0.2s; }
+        .editor-content img.selected { box-shadow: 0 0 0 3px #000000; }
+        .editor-content ol { list-style-type: decimal; }
+        .editor-content ul { list-style-type: disc; }
+        .editor-content blockquote { border-left: 4px solid #000000; padding-left: 10px; color: #4B5563; margin-left: 0; }
+        #img-resize-handle { position: absolute; width: 12px; height: 12px; background-color: #000000; border: 1px solid white; cursor: nwse-resize; z-index: 100; display: none; pointer-events: auto; }
+        #selection-toolbar { background: white; border-bottom: 1px solid #E5E7EB; padding: 8px 12px; display: flex; align-items: center; gap: 4px; z-index: 1000; transition: opacity 0.2s, transform 0.2s; position: absolute; opacity: 0; pointer-events: none; box-shadow: 0 4px 20px rgba(0,0,0,0.12); border-radius: 8px; border: 1px solid #E5E7EB; transform: translateY(10px); left: 0; top: 0; white-space: nowrap; }
+        @media (max-width: 768px) { #selection-toolbar { overflow-x: auto; justify-content: flex-start !important; max-width: 100vw; -webkit-overflow-scrolling: touch; } }
+        #selection-toolbar.visible { opacity: 1; pointer-events: auto; transform: translateY(0); }
+        #selection-toolbar.pinned { position: sticky !important; top: 0 !important; left: 0 !important; transform: none !important; width: 100%; border-radius: 0; border: none; border-bottom: 1px solid #E5E7EB; box-shadow: 0 2px 4px rgba(0,0,0,0.02); opacity: 1 !important; pointer-events: auto !important; justify-content: center; padding-left: 0; }
+        .toolbar-divider { width: 1px; height: 16px; background-color: #E5E7EB; margin: 0 4px; flex-shrink: 0; }
+        #selection-toolbar button, #selection-toolbar select { padding: 4px 6px; border-radius: 4px; color: #4B5563; background: transparent; cursor: pointer; border: none; outline: none; transition: all 0.2s; flex-shrink: 0; font-weight: 500;}
+        #selection-toolbar button:hover, #selection-toolbar select:hover { background-color: #F3F4F6; color: #000000; }
+        #selection-toolbar button.active { background-color: #E5E7EB; color: #000000; font-weight: bold;}
+        .custom-select-trigger { padding: 4px 8px; border-radius: 4px; color: #4B5563; cursor: pointer; font-size: 14px; display: flex; align-items: center; gap: 4px; min-width: 60px; justify-content: space-between; flex-shrink: 0; font-weight: 500;}
+        .custom-select-trigger:hover { background-color: #F3F4F6; color: #000000; }
+        .custom-select-dropdown { position: absolute; top: 100%; left: 0; background: white; border: 1px solid #E5E7EB; border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); padding: 4px; display: none; flex-direction: column; min-width: 80px; z-index: 60; max-height: 200px; overflow-y: auto; }
+        .custom-select-option { padding: 6px 10px; font-size: 14px; color: #374151; cursor: pointer; border-radius: 4px; text-align: center; }
+        .custom-select-option:hover { background-color: #F3F4F6; color: #000000; font-weight: bold;}
+        .color-picker-container { position: relative; flex-shrink: 0; }
+        .color-picker-popup { width: 260px !important; grid-template-columns: repeat(10, 1fr) !important; padding: 8px !important; gap: 4px !important; position: absolute; background: white; border: 1px solid #E5E7EB; border-radius: 6px; box-shadow: 0 4px 20px rgba(0,0,0,0.15); z-index: 50; display: none; }
+        .color-picker-popup.show { display: grid; } 
+        .popup-top { bottom: 100%; margin-bottom: 5px; top: auto; }
+        .popup-bottom { top: 100%; margin-top: 5px; bottom: auto; }
+        .color-swatch { width: 20px; height: 20px; border-radius: 3px; cursor: pointer; border: 1px solid rgba(0,0,0,0.05); }
+        .color-swatch:hover { transform: scale(1.2); box-shadow: 0 2px 4px rgba(0,0,0,0.15); z-index: 10; border-color: #000000; }
+
+        /* --- 日历 & 任务条样式 --- */
+        .calendar-wrapper { 
+            background: white; border: 1px solid #E5E9F2; border-radius: 12px;
+            overflow: visible; width: 100%; transition: box-shadow 0.3s ease; user-select: none; 
+        }
+        .calendar-scroll-container { width: 100%; display: block; overflow-y: scroll; scrollbar-gutter: stable; } 
+        
+        .weekdays-header { 
+            display: grid; grid-template-columns: repeat(5, 1fr); background-color: #FAFBFC; 
+            border-bottom: 1px solid #E5E9F2; border-top-left-radius: 12px; border-top-right-radius: 12px;
+            position: sticky; top: 0; z-index: 40;
+        }
+        .weekday-cell { padding: 12px; text-align: center; font-size: 14px; color: #858E99; font-weight: 500; border-right: 1px solid transparent; }
+        @media (max-width: 768px) { .weekday-cell { padding: 8px 2px; font-size: 10px; } }
+
+        .week-row { position: relative; display: grid; grid-template-columns: repeat(5, 1fr); border-bottom: 1px solid #E5E9F2; }
+        .week-row:last-child { border-bottom: none; border-bottom-left-radius: 12px; border-bottom-right-radius: 12px; }
+        
+        .day-bg-col { 
+            border-right: 1px solid #E5E9F2; position: relative; z-index: 0; padding-bottom: 5px; 
+            height: 100%; width: 100%; box-sizing: border-box; display: flex; flex-direction: column;
+        }
+        .day-bg-col:last-child { border-right: none; }
+        
+        .week-row:last-child .day-bg-col:nth-child(1) { border-bottom-left-radius: 12px; }
+        .week-row:last-child .day-bg-col:nth-child(5) { border-bottom-right-radius: 12px; }
+
+        .day-bg-col.not-current-month { color: #858E99; background-color: #FAFBFC; }
+        .day-bg-col.not-current-month .day-number-container { opacity: 0.6; }
+        
+        .day-number-container { padding: 8px 12px; display: flex; justify-content: space-between; align-items: center; height: 36px; }
+        @media (max-width: 768px) { .day-number-container { padding: 4px; justify-content: center; height: 24px; } .add-btn { display: none; } }
+        .day-number { font-weight: 600; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; border-radius: 8px; font-size: 14px; line-height: 1; transition: background-color 0.2s ease; }
+        @media (max-width: 768px) { .day-number { width: 20px; height: 20px; font-size: 11px; border-radius: 4px; } }
+        .day-bg-col.today .day-number { background-color: var(--theme-primary); color: white; }
+        .add-btn { position: absolute; top: 4px; right: 4px; opacity: 0; color: var(--theme-primary); transition: all 0.2s; cursor: pointer; font-size: 18px; z-index: 30; padding: 4px; }
+        .day-bg-col.day-active:hover .add-btn { opacity: 1; }
+        .add-btn:hover { transform: scale(1.1); } .add-btn:active { transform: scale(0.9); }
+        
+        .task-layer { position: absolute; top: 36px; left: 0; right: 0; bottom: 0; pointer-events: none; z-index: 10; }
+        @media (max-width: 768px) { .task-layer { top: 24px; } }
+
+        .task-bar { position: absolute; height: 32px; border-radius: 6px; padding: 0 8px; display: flex; align-items: center; gap: 6px; cursor: pointer; pointer-events: auto; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05); font-size: 13px; overflow: visible; white-space: nowrap; background-color: var(--task-single-bg); border-left: 3px solid transparent; color: #171A1D; transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.2s; }
+        .task-bar.long-press-active { transform: scale(1.05); box-shadow: 0 8px 16px rgba(0,0,0,0.15); z-index: 50; cursor: grabbing; }
+
+        @media (max-width: 768px) {
+            .task-bar { height: 18px; padding: 0 2px; gap: 1px; font-size: 9px; border-radius: 3px; border-left-width: 2px; }
+            .task-bar .custom-checkbox { width: 10px; height: 10px; border-radius: 2px; border-width: 1px; }
+            .task-bar .custom-checkbox:checked::before { font-size: 7px; }
+            .task-bar .task-title { font-size: 9px; } 
+        }
+        
+        body.dragging-active .task-bar, body.dragging-active .task-bar * { pointer-events: none !important; }
+        body:not(.dragging-active) .task-bar:hover { background-color: var(--theme-primary) !important; color: white !important; }
+        
+        .task-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+        .task-bar.is-visual-start { border-left-color: var(--theme-primary); margin-left: 4px; border-top-left-radius: 6px; border-bottom-left-radius: 6px; }
+        @media (max-width: 768px) { .task-bar.is-visual-start { margin-left: 1px; } }
+        .task-bar.is-multi:not(.is-visual-start) { border-top-left-radius: 0; border-bottom-left-radius: 0; margin-left: 0; }
+        .task-bar.is-end { margin-right: 4px; border-top-right-radius: 6px; border-bottom-right-radius: 6px; }
+        @media (max-width: 768px) { .task-bar.is-end { margin-right: 1px; } }
+        .task-bar.is-multi:not(.is-end) { border-top-right-radius: 0; border-bottom-right-radius: 0; margin-right: 0; }
+        .task-bar.completed { background-color: #F0F2F5 !important; color: #A0A9B5 !important; text-decoration: line-through; border-left-color: #DCDFE6 !important; box-shadow: none; }
+        .task-bar.completed .task-title-content { background-color: #F0F2F5 !important; color: #A0A9B5 !important; text-decoration: line-through; }
+        
+        .task-bar:hover { z-index: 100; }
+        
+        .task-bar.is-multi .task-title { display: block; }
+        .task-bar.is-visual-start .task-title { display: block; }
+        .task-bar:not(.is-multi) .task-title { display: block; }
+        .task-bar.is-multi.is-visual-start .task-title-content { position: absolute; left: 0; top: 0; bottom: 0; pointer-events: auto; display: flex; align-items: center; padding-left: 34px; padding-right: 12px; background-color: var(--task-single-bg); color: #171A1D; width: max-content; min-width: 100%; max-width: 500%; z-index: 15; white-space: nowrap; border-radius: 6px; }
+        body:not(.dragging-active) .task-bar.is-multi.is-visual-start:hover .task-title-content { background-color: var(--theme-primary) !important; color: white !important; z-index: 20; }
+        
+        .custom-checkbox { -webkit-appearance: none; appearance: none; width: 16px; height: 16px; border: 2px solid #C0C4CC; border-radius: 4px; cursor: pointer; z-index: 50; position: relative; margin-right: 4px; background-color: white; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+        .custom-checkbox:checked { background-color: var(--theme-primary) !important; border-color: var(--theme-primary) !important; }
+        .custom-checkbox:checked::before { content: "\f00c"; font-family: "Font Awesome 6 Free"; font-weight: 900; font-size: 10px; color: white; }
+        .resize-handle { position: absolute; width: 24px; height: 100%; cursor: col-resize; top: 0; z-index: 60; opacity: 0; display: flex; align-items: center; justify-content: center; }
+        .resize-handle::after { content: ''; width: 6px; height: 24px; background-color: white; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.3); transition: transform 0.1s; }
+        body:not(.dragging-active) .task-bar:hover .resize-handle { opacity: 1; }
+        .resize-handle:hover::after { transform: scale(1.1); background-color: var(--theme-light); }
+        .resize-handle.left { left: -14px; } 
+        .resize-handle.right { right: -14px; }
+
+        #task-modal, #pending-list-modal, #confirm-modal, #folder-modal, #logout-confirm-modal { z-index: 100; }
+        #confirm-modal, #folder-modal, #logout-confirm-modal { z-index: 110; } 
+        .modal { transition: opacity 0.2s ease-out; backdrop-filter: blur(4px); }
+        .modal-content { transition: transform 0.2s ease-out, opacity 0.2s ease-out; transform: scale(0.98); opacity: 0; }
+        .modal.show .modal-content { transform: scale(1); opacity: 1; }
+        input[type="date"]::-webkit-calendar-picker-indicator { background: transparent; bottom: 0; color: transparent; cursor: pointer; height: auto; left: 0; position: absolute; right: 0; top: 0; width: auto; }
+        .focus-within\:border-blue-500:focus-within { border-color: var(--theme-primary); box-shadow: 0 0 0 2px rgba(0, 137, 255, 0.1); }
+        .custom-datepicker { width: 220px; background-color: white; border-radius: 12px; border: 1px solid #E5E9F2; box-shadow: 0 8px 30px rgba(0, 0, 0, 0.1); overflow: hidden; user-select: none; }
+        .datepicker-header { display: flex; justify-content: space-between; align-items: center; padding: 8px 10px; border-bottom: 1px solid #E5E9F2; }
+        .datepicker-nav-btn { width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; border-radius: 6px; color: var(--ding-text-sub); transition: background-color 0.15s; }
+        .datepicker-nav-btn:hover { background-color: #F5F7FA; color: var(--theme-primary); }
+        .datepicker-grid { display: grid; grid-template-columns: repeat(5, 1fr); padding: 12px; text-align: center; gap: 4px; }
+        .datepicker-day { width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; font-size: 13px; border-radius: 6px; cursor: pointer; transition: background-color 0.1s, color 0.1s; }
+        .datepicker-day.selected { background-color: var(--theme-primary); color: white; font-weight: 600; }
+        .datepicker-day:not(.not-current-month):not(.selected):hover { background-color: var(--theme-light); }
+        .datepicker-day.not-current-month { color: #E2E4E7; cursor: not-allowed; pointer-events: none; }
+        #custom-drag-ghost { position: fixed; pointer-events: none; z-index: 9999; background-color: var(--theme-primary); color: white; padding: 0 8px; height: 32px; border-radius: 6px; display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; opacity: 0.9; box-shadow: 0 2px 8px rgba(0,0,0,0.15); border: none; }
+        
+        .pending-item .delete-btn { opacity: 1; color: #EF4444; }
+        .pending-item .delete-btn:hover { color: #DC2626; }
+        
+        .side-task-card { user-select: none; position: relative; }
+        .side-task-card:hover { z-index: 100; }
+        
+        .narrow-scrollbar::-webkit-scrollbar { width: 4px; }
+        .narrow-scrollbar::-webkit-scrollbar-thumb { background-color: #E2E8F0; border-radius: 4px; }
+        .narrow-scrollbar::-webkit-scrollbar-thumb:hover { background-color: #CBD5E1; }
+        /* --- 动态角色登录页 --- */
+        .auth-shell { width: min(920px, calc(100vw - 40px)); min-height: 560px; display: grid; grid-template-columns: 1.08fr .92fr; overflow: hidden; border-radius: 22px; background: white; box-shadow: 0 28px 80px rgba(17, 24, 39, .16); }
+        .auth-art { position: relative; overflow: hidden; background: #f1f1f1; }
+        .auth-panel { padding: 66px 62px 42px; display: flex; flex-direction: column; justify-content: center; }
+        .auth-logo { width: 30px; height: 30px; margin: 0 auto 34px; position: relative; transform: rotate(45deg); }
+        .auth-logo::before, .auth-logo::after { content: ''; position: absolute; background: #19191d; border-radius: 20px; }
+        .auth-logo::before { width: 8px; height: 30px; left: 11px; } .auth-logo::after { width: 30px; height: 8px; top: 11px; }
+        .auth-field { position: relative; padding-top: 18px; border-bottom: 1px solid #9ca3af; transition: border-color .2s; }
+        .auth-field:focus-within { border-bottom-color: #111; }
+        .auth-field label { display: block; font-size: 12px; color: #383838; margin-bottom: 4px; }
+        .auth-field input { width: 100%; height: 34px; border: 0; outline: 0; background: transparent; color: #111; font-size: 14px; }
+        .auth-eye { position: absolute; right: 2px; bottom: 9px; color: #222; cursor: pointer; font-size: 13px; }
+        .auth-options { margin: 14px 0 24px; display: flex; justify-content: space-between; align-items: center; font-size: 11px; color: #777; }
+        .auth-submit { width: 100%; height: 46px; border-radius: 24px; background: #1e1e21; color: white; font-size: 13px; font-weight: 600; transition: transform .2s, background .2s; }
+        .auth-submit:hover { background: #000; transform: translateY(-1px); }
+        .auth-toggle { margin-top: 44px; text-align: center; font-size: 11px; color: #777; } .auth-toggle span:last-child { color: #111; font-weight: 600; cursor: pointer; }
+        .character-head { position: absolute; width: 188px; height: 88px; left: 50%; top: 74px; transform: translateX(-50%) rotate(5deg); background: #1d1d21; border-radius: 45% 35% 22% 30%; transition: transform .45s cubic-bezier(.2,.8,.2,1); }
+        .character-eye { position: absolute; top: 34px; width: 13px; height: 13px; border: 4px solid white; border-radius: 50%; transition: transform .25s, opacity .2s; }
+        .character-eye.left { left: 34px; } .character-eye.right { left: 69px; }
+        .character-body { position: absolute; width: 118px; height: 120px; left: calc(50% - 62px); bottom: 95px; background: #6d28ff; transform: rotate(-1deg); }
+        .character-arm { position: absolute; width: 48px; height: 96px; left: calc(50% - 91px); bottom: 127px; background: #ff8038; border-radius: 30px; transform: rotate(-26deg); transform-origin: bottom center; transition: transform .45s cubic-bezier(.2,.8,.2,1); z-index: 3; }
+        .character-face { position: absolute; width: 95px; height: 57px; left: calc(50% + 50px); bottom: 96px; background: #ffde17; border-radius: 60px 60px 0 0; }
+        .character-face::before { content: ''; position: absolute; width: 6px; height: 6px; border-radius: 50%; background: #151515; left: 43px; top: 24px; }
+        .character-face::after { content: ''; position: absolute; width: 46px; height: 4px; background: #151515; left: 22px; top: 43px; transform: rotate(18deg); }
+        .auth-art.email-active .character-head { transform: translateX(-50%) rotate(-2deg) translateY(8px); } .auth-art.email-active .character-eye { transform: translateX(18px); }
+        .auth-art.password-active .character-arm { transform: translate(68px,-186px) rotate(76deg); } .auth-art.password-active .character-head { transform: translateX(-50%) rotate(2deg); } .auth-art.password-active .character-eye { opacity: .15; }
+        @media (max-width: 720px) { .auth-shell { grid-template-columns: 1fr; width: min(430px, calc(100vw - 28px)); min-height: auto; } .auth-art { display: none; } .auth-panel { padding: 46px 34px 34px; } }
+        /* CareerCompass 参考页：全屏双栏与动态几何角色 */
+        #login-container { background: #fff !important; padding: 0; }
+        .auth-shell { width: 100vw; height: 100vh; min-height: 600px; display: grid; grid-template-columns: 54% 46%; border-radius: 0; box-shadow: none; }
+        .auth-art { display: block; background: radial-gradient(circle at 36% 35%, #b5bbc3 0, #8f98a4 42%, #697481 100%); }
+        .auth-brand { position: absolute; top: 48px; left: 48px; display: flex; align-items: center; gap: 10px; color: white; font-size: 20px; font-weight: 700; letter-spacing: -.4px; z-index: 5; }
+        .auth-brand-mark { width: 30px; height: 30px; display: grid; place-items: center; border-radius: 9px; background: rgba(255,255,255,.88); color: #101318; font-size: 13px; transform: rotate(-8deg); }
+        .auth-legal { position: absolute; left: 48px; bottom: 48px; display: flex; gap: 36px; color: rgba(25,32,43,.42); font-size: 14px; }
+        .auth-characters { position: absolute; left: 7%; right: 8%; bottom: 14.4%; height: 58%; }
+        .auth-character { position: absolute; bottom: 0; transform-origin: bottom center; transition: transform .45s cubic-bezier(.2,.8,.2,1); }
+        .auth-character .eye { position: absolute; width: 18px; height: 18px; border-radius: 50%; background: white; top: 30px; overflow: hidden; }
+        .auth-character .eye::after { content: ''; position: absolute; width: 7px; height: 7px; border-radius: 50%; background: #20242a; left: 6px; top: 6px; transition: transform .35s cubic-bezier(.2,.8,.2,1); }
+        .auth-character .eye.left { left: 36px; } .auth-character .eye.right { left: 86px; }
+        .character-purple { left: 17%; width: 40%; height: 100%; background: #6937f5; border-radius: 10px 10px 0 0; z-index: 1; }
+        .character-black { left: 50%; width: 25%; height: 78%; background: #2e2e2f; border-radius: 8px 8px 0 0; z-index: 2; }
+        .character-black .eye { top: 22px; width: 16px; height: 16px; } .character-black .eye.left { left: 30px; } .character-black .eye.right { left: 70px; }
+        .character-orange { left: 5%; width: 49%; height: 49%; background: #ff9868; border-radius: 999px 999px 0 0; z-index: 3; }
+        .character-orange .eye { background: #30343a; width: 12px; height: 12px; top: 38%; } .character-orange .eye::after { display: none; } .character-orange .eye.left { left: 42%; } .character-orange .eye.right { left: 61%; }
+        .character-yellow { left: 64.5%; width: 31%; height: 57%; background: #efdc50; border-radius: 999px 999px 0 0; z-index: 4; }
+        .character-yellow .eye { background: #30343a; width: 12px; height: 12px; top: 15%; } .character-yellow .eye::after { display: none; } .character-yellow .eye.left { left: 37%; } .character-yellow .eye.right { left: 61%; }
+        .character-orange .eye, .character-yellow .eye { transform: translate(var(--eye-x), var(--eye-y)); transition: transform .28s cubic-bezier(.2,.8,.2,1); }
+        .character-yellow .mouth { position: absolute; left: 26%; right: 14%; top: 36%; height: 4px; border-radius: 8px; background: #30343a; }
+        .auth-art.email-active .character-purple { transform: skewX(-14deg); } .auth-art.email-active .character-black { transform: skewX(-4deg); }
+        .auth-art.email-active .auth-character .eye::after { transform: translate(4px,2px); }
+        .auth-art.password-active .character-purple { transform: skewX(5deg); } .auth-art.password-active .character-black { transform: skewX(3deg); }
+        .auth-art.password-active .auth-character .eye::after { transform: translate(3px,0); }
+        .auth-panel { padding: 0 9vw 0 4.6vw; justify-content: center; background: white; }
+        .auth-form-wrap { width: min(420px, 100%); margin: 0 auto; }
+        .auth-logo { display: none; }
+        .auth-heading { margin-bottom: 38px; } .auth-heading h2 { font-size: 30px; line-height: 36px; letter-spacing: -.8px; } .auth-heading p { margin-top: 4px; color: #94a3b8; font-size: 14px; }
+        .auth-field { padding: 0; border: 0; margin-bottom: 22px; }
+        .auth-field label { font-size: 14px; color: #111827; margin: 0 0 8px; }
+        .auth-field input { height: 48px; border: 1px solid rgba(226,232,240,.85); border-radius: 999px; padding: 0 16px; font-size: 14px; color: #111827; transition: border .2s, box-shadow .2s; }
+        .auth-field input:focus { border-color: #4051b5; box-shadow: 0 0 0 3px rgba(64,81,181,.18); }
+        .auth-eye { right: 14px; bottom: 15px; color: #64748b; }
+        .auth-options { margin: -1px 0 20px; color: #111827; font-size: 14px; }
+        .auth-options a { color: #4051b5; cursor: pointer; }
+        .auth-submit { width: 100%; height: 48px; border: 1px solid rgba(226,232,240,.9); border-radius: 999px; background: white; color: #020817; font-size: 16px; font-weight: 500; transition: border-color .2s, background .2s; }
+        .auth-submit:hover { background: #4051b5; border-color: #4051b5; color: white; transform: none; }
+        .auth-toggle { margin-top: 32px; font-size: 14px; color: #94a3b8; } .auth-toggle span:last-child { color: #111827; }
+        @media (max-width: 900px) { .auth-shell { grid-template-columns: 46% 54%; } .auth-panel { padding: 0 6vw; } .auth-brand { left: 28px; top: 30px; } .auth-legal { left: 28px; bottom: 28px; gap: 18px; } }
+        @media (max-width: 720px) { .auth-shell { width: 100vw; min-height: 100vh; grid-template-columns: 1fr; } .auth-art { display: none; } .auth-panel { padding: 38px 28px; } .auth-heading { margin-bottom: 30px; } }
+        /* 参考视频交互：入场、指针跟随、表单状态和错误反馈 */
+        .auth-art { background: #E7E7E9; --move-x: 0px; --move-y: 0px; --tilt: 0deg; --eye-x: 0px; --eye-y: 0px; }
+        .auth-art .auth-character { --state-tilt: 0deg; --state-skew: 0deg; transform: translate3d(var(--move-x), var(--move-y), 0) rotate(calc(var(--tilt) + var(--state-tilt))) skewX(var(--state-skew)); transition: transform .38s cubic-bezier(.22,.9,.27,1); }
+        .auth-art .auth-character .eye::after { transform: translate(var(--eye-x), var(--eye-y)); }
+        .auth-art.is-entering .character-purple { animation: characterEnter .82s .08s cubic-bezier(.16,1,.3,1) both; }
+        .auth-art.is-entering .character-black { animation: characterEnter .72s .22s cubic-bezier(.16,1,.3,1) both; }
+        .auth-art.is-entering .character-orange { animation: characterEnter .68s .34s cubic-bezier(.16,1,.3,1) both; }
+        .auth-art.is-entering .character-yellow { animation: characterEnter .7s .46s cubic-bezier(.16,1,.3,1) both; }
+        @keyframes characterEnter { 0% { transform: translateY(115%) scaleY(.55); opacity: 0; } 62% { transform: translateY(-5%) scaleY(1.04); opacity: 1; } 100% { transform: translateY(0) scaleY(1); opacity: 1; } }
+        .auth-art.email-active .character-purple { --state-tilt: 10deg; --state-skew: -9deg; transform: translate3d(var(--move-x), var(--move-y), 0) rotate(calc(var(--tilt) + var(--state-tilt))) skewX(var(--state-skew)); }
+        .auth-art.email-active .character-black { --state-tilt: 4deg; --state-skew: -3deg; transform: translate3d(var(--move-x), var(--move-y), 0) rotate(calc(var(--tilt) + var(--state-tilt))) skewX(var(--state-skew)); }
+        .auth-art.email-active { --eye-x: 4px; --eye-y: 3px; }
+        .auth-art.password-active .character-purple { --state-tilt: -7deg; --state-skew: 5deg; transform: translate3d(var(--move-x), var(--move-y), 0) rotate(calc(var(--tilt) + var(--state-tilt))) skewX(var(--state-skew)); }
+        .auth-art.password-active .character-black { --state-tilt: -5deg; --state-skew: 3deg; transform: translate3d(var(--move-x), var(--move-y), 0) rotate(calc(var(--tilt) + var(--state-tilt))) skewX(var(--state-skew)); }
+        .auth-art.password-active .character-orange { --state-tilt: 2deg; } .auth-art.password-active .character-yellow { --state-tilt: -3deg; }
+        .auth-art.password-active { --eye-x: 3px; --eye-y: 0px; }
+        .auth-art.error-active .auth-character { animation: characterError .58s cubic-bezier(.36,.07,.19,.97); }
+        .auth-art.error-active .character-purple { --state-tilt: -10deg; } .auth-art.error-active .character-black { --state-tilt: 9deg; } .auth-art.error-active .character-orange { --state-tilt: -4deg; } .auth-art.error-active .character-yellow { --state-tilt: 7deg; }
+        .auth-art.error-active { --eye-x: -4px; --eye-y: 3px; }
+        .auth-art.error-active .character-yellow .mouth { transform: rotate(-12deg); }
+        @keyframes characterError { 0%,100% { margin-left: 0; } 20% { margin-left: -18px; } 40% { margin-left: 15px; } 60% { margin-left: -10px; } 80% { margin-left: 7px; } }
+        .auth-field.has-error input { border-color: #ef4444; box-shadow: 0 0 0 3px rgba(239,68,68,.14); }
+        .auth-error { min-height: 18px; margin: -13px 0 8px; color: #ef4444; font-size: 12px; opacity: 0; transform: translateY(-3px); transition: .2s; }
+        .auth-error.show { opacity: 1; transform: translateY(0); }
+        @media (prefers-reduced-motion: reduce) { .auth-art .auth-character, .auth-art.is-entering .auth-character, .auth-art.error-active .auth-character { animation: none !important; transition: none !important; } }
+        /* 固定基线的弹性动作：身体只水平移动/剪切，底边始终保持水平 */
+        .auth-art { --body-x: 0px; --body-skew: 0deg; --face-x: 0px; --face-y: 0px; --pupil-x: 0px; --pupil-y: 0px; }
+        .auth-art .auth-character { --state-skew: 0deg; --state-face-x: 0px; --state-face-y: 0px; bottom: 0 !important; transform-origin: 50% 100%; transform: translateX(var(--body-x)) skewX(calc(var(--body-skew) + var(--state-skew))); transition: transform .52s cubic-bezier(.34,1.56,.64,1), margin-left .52s cubic-bezier(.34,1.56,.64,1); }
+        .auth-art .auth-character .eye { transform: translate(calc(var(--face-x) + var(--state-face-x)), calc(var(--face-y) + var(--state-face-y))); transition: transform .38s cubic-bezier(.34,1.56,.64,1), width .38s cubic-bezier(.34,1.56,.64,1); }
+        .auth-art .auth-character .eye::after { transform: translate(var(--pupil-x), var(--pupil-y)); transition: transform .26s cubic-bezier(.34,1.56,.64,1); }
+        .auth-character .face-mouth { position: absolute; background: #25282d; transform: translate(calc(var(--face-x) + var(--state-face-x)), calc(var(--face-y) + var(--state-face-y))); transition: transform .4s cubic-bezier(.34,1.56,.64,1); }
+        .character-purple .face-mouth { width: 18px; height: 7px; left: 57px; top: 57px; border-radius: 50%; }
+        .character-orange .face-mouth { width: 25px; height: 12px; left: 52%; top: 51%; background: transparent; border-bottom: 7px solid #25282d; border-radius: 0 0 24px 24px; }
+        .character-yellow .mouth { transform: translate(calc(var(--face-x) + var(--state-face-x)), calc(var(--face-y) + var(--state-face-y))); transition: transform .4s cubic-bezier(.34,1.56,.64,1); }
+        .auth-art.is-entering .auth-character { transform-origin: 50% 100%; }
+        @keyframes characterEnter { 0% { transform: scaleY(.02); opacity: 0; } 58% { transform: scaleY(1.16); opacity: 1; } 76% { transform: scaleY(.92); opacity: 1; } 90% { transform: scaleY(1.05); opacity: 1; } 100% { transform: scaleY(1); opacity: 1; } }
+        .auth-art.email-active .character-purple { --state-skew: -14deg; --state-face-x: 9px; --state-face-y: 5px; transform: translateX(var(--body-x)) skewX(calc(var(--body-skew) + var(--state-skew))); }
+        .auth-art.email-active .character-black { --state-skew: -8deg; --state-face-x: 8px; --state-face-y: 4px; transform: translateX(var(--body-x)) skewX(calc(var(--body-skew) + var(--state-skew))); }
+        .auth-art.email-active .character-orange { --state-skew: -4deg; --state-face-x: 7px; --state-face-y: 3px; }
+        .auth-art.email-active .character-yellow { --state-skew: -6deg; --state-face-x: 8px; --state-face-y: 3px; }
+        .auth-art.password-active .character-purple { --state-skew: 10deg; --state-face-x: 6px; transform: translateX(var(--body-x)) skewX(calc(var(--body-skew) + var(--state-skew))); }
+        .auth-art.password-active .character-black { --state-skew: 7deg; --state-face-x: 6px; transform: translateX(var(--body-x)) skewX(calc(var(--body-skew) + var(--state-skew))); }
+        .auth-art.password-active .character-orange { --state-skew: 4deg; --state-face-x: 5px; }
+        .auth-art.password-active .character-yellow { --state-skew: 5deg; --state-face-x: 6px; }
+        .auth-art.error-active .character-purple { --state-skew: -16deg; } .auth-art.error-active .character-black { --state-skew: 15deg; } .auth-art.error-active .character-orange { --state-skew: -9deg; } .auth-art.error-active .character-yellow { --state-skew: 11deg; }
+        /* 最终基线约束：角色盒子不参与变换，只改变上半部轮廓 */
+        .auth-characters { overflow: visible; }
+        .auth-characters::after { content: ''; position: absolute; left: -2px; right: -2px; bottom: -2px; height: 4px; background: #E7E7E9; z-index: 20; pointer-events: none; }
+        .auth-art { --lean: 0px; }
+        .auth-art .auth-character { --state-lean: 0px; clip-path: polygon(clamp(0px, calc(var(--lean) + var(--state-lean)), 30px) 0, clamp(calc(100% - 30px), calc(100% + var(--lean) + var(--state-lean)), 100%) 0, 100% 100%, 0 100%); transition: clip-path .52s cubic-bezier(.34,1.56,.64,1), margin-left .52s cubic-bezier(.34,1.56,.64,1); }
+        .auth-art:not(.is-entering) .auth-character { transform: none !important; bottom: 0 !important; }
+        .auth-art.email-active .character-purple { --state-lean: -18px; } .auth-art.email-active .character-black { --state-lean: -10px; }
+        .auth-art.password-active .character-purple { --state-lean: 14px; } .auth-art.password-active .character-black { --state-lean: 8px; }
+        .auth-art.error-active .character-purple { --state-lean: -20px; } .auth-art.error-active .character-black { --state-lean: 17px; } .auth-art.error-active .character-orange { --state-lean: -8px; } .auth-art.error-active .character-yellow { --state-lean: 10px; }
+        .auth-character.is-blinking .eye { transform: translate(calc(var(--face-x) + var(--state-face-x)), calc(var(--face-y) + var(--state-face-y))) scaleY(.08) !important; transition-duration: .09s !important; }
+        .auth-character.is-blinking .eye::after { opacity: 0; }
+        /* 无裁剪大幅度动作：底部锚定，顶部弹性摆动 */
+        .auth-art .auth-character { clip-path: none !important; transform-origin: 50% 100% !important; transition: transform .56s cubic-bezier(.34,1.7,.64,1), margin-left .5s cubic-bezier(.34,1.56,.64,1); }
+        .auth-art:not(.is-entering) .auth-character { transform: translateX(var(--body-x)) skewX(calc(var(--body-skew) + var(--state-skew))) !important; bottom: 0 !important; }
+        .auth-art .auth-character .eye { transition: transform .42s cubic-bezier(.34,1.7,.64,1), width .36s cubic-bezier(.34,1.56,.64,1); }
+        .auth-character .face-mouth, .character-yellow .mouth { transition: transform .44s cubic-bezier(.34,1.7,.64,1); }
+    </style>
+</head>
+<body>
+
+    <!-- 登录/注册层 (覆盖全屏) -->
+    <div id="login-container" class="hidden fixed inset-0 flex items-center justify-center bg-[#e9e9e9] z-[999999] transition-opacity duration-300">
+        <div class="auth-shell">
+            <div class="auth-art is-entering" id="auth-art" aria-hidden="true">
+                <div class="auth-brand"><span class="auth-brand-mark"><i class="fas fa-location-arrow"></i></span><span>LU任务管理器</span></div>
+                <div class="auth-characters">
+                    <div class="auth-character character-purple"><i class="eye left"></i><i class="eye right"></i><i class="face-mouth"></i></div>
+                    <div class="auth-character character-black"><i class="eye left"></i><i class="eye right"></i></div>
+                    <div class="auth-character character-orange"><i class="eye left"></i><i class="eye right"></i><i class="face-mouth"></i></div>
+                    <div class="auth-character character-yellow"><i class="eye left"></i><i class="eye right"></i><i class="mouth"></i></div>
+                </div>
+                <div class="auth-legal"><span>隐私政策</span><span>服务条款</span></div>
+            </div>
+            <div class="auth-panel">
+                <div class="auth-form-wrap">
+                <div class="auth-heading text-center"><h2 class="font-bold text-[#171A1D]" id="auth-title">欢迎回来！</h2><p>请输入你的账号信息</p></div>
+                <form id="auth-form" novalidate onsubmit="event.preventDefault(); window.login();">
+                    <div class="auth-field"><label>邮箱</label><input id="auth-account" type="email" required autocomplete="email" placeholder="请输入邮箱"></div>
+                    <div class="auth-field" id="auth-password-field"><label>密码</label><input id="auth-password" type="password" required minlength="6" autocomplete="current-password" placeholder="请输入密码"><button class="auth-eye" type="button" aria-label="显示密码" onclick="window.togglePasswordVisibility()"><i class="far fa-eye"></i></button></div>
+                    <div class="auth-error" id="auth-error">请输入有效邮箱，密码至少需要 6 位</div>
+                    <div class="auth-options"><label class="flex items-center gap-2"><input type="checkbox"> 30 天内记住我</label><a>忘记密码？</a></div>
+                    <button type="submit" id="auth-submit-btn" class="auth-submit">登 录</button>
+                    <div class="auth-toggle"><span id="auth-toggle-prefix">还没有账号？</span> <span onclick="window.toggleAuthMode()" id="auth-toggle-text">立即注册</span></div>
+                </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 确认登出弹板 -->
+    <div id="logout-confirm-modal" class="fixed inset-0 hidden bg-black bg-opacity-40 flex items-center justify-center modal p-4 z-[70]">
+        <div class="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 modal-content text-center transform scale-100">
+            <div class="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <i class="fas fa-sign-out-alt text-gray-800 text-lg transform -scale-x-100"></i>
+            </div>
+            <h3 class="text-lg font-bold text-[#171A1D] mb-2">确认登出</h3>
+            <p class="text-sm text-[#858E99] mb-6 px-4">您确定要退出当前账号吗？</p>
+            <div class="flex gap-3">
+                <button onclick="window.closeModal('logout-confirm-modal')" class="flex-1 py-2.5 border border-gray-200 rounded-xl text-[#171A1D] font-medium hover:bg-gray-50 transition">取消</button>
+                <button onclick="window.executeLogout()" class="flex-1 py-2.5 bg-black text-white rounded-xl font-medium hover:bg-gray-800 shadow-md transition">确定登出</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="img-resize-handle"></div>
+    <div id="context-menu"></div>
+    <div id="toast-container" class="fixed top-5 left-1/2 transform -translate-x-1/2 z-[9999] flex flex-col gap-2 pointer-events-none"></div>
+    
+    <div id="global-tooltip" class="fixed bg-[#171A1D] text-white px-3 py-2 rounded-lg text-xs z-[99999] pointer-events-none opacity-0 transition-opacity duration-150 whitespace-normal shadow-lg leading-relaxed break-words" style="max-width: 250px; min-width: 120px; left: -9999px; top: -9999px;"></div>
+
+    <nav class="sidebar collapsed" id="sidebar">
+        <!-- 修改点 2 & 4：将顶部变为可点击区域并增加 Hover 轻微弹起反馈 -->
+        <div class="h-[70px] border-b border-gray-800 mb-4 whitespace-nowrap overflow-hidden flex items-center flex-shrink-0 pl-[23px] pr-[20px] cursor-pointer group" onclick="window.showLogoutConfirmModal()">
+            <div class="flex items-center w-full transition-transform duration-200 ease-out group-hover:-translate-y-1 group-hover:scale-[1.02]">
+                <div class="w-[24px] text-center flex-shrink-0 mr-[12px]">
+                    <i class="fas fa-rocket text-white text-[20px]"></i>
+                </div>
+                <span class="nav-text text-xl font-bold tracking-wide text-white">个人空间站</span>
+            </div>
+        </div>
+        <div class="flex-1 overflow-y-auto">
+            <div class="nav-item active" onclick="window.switchModule('calendar', this)">
+                <div class="nav-icon"><i class="fas fa-calendar-check"></i></div><span class="nav-text">工作日历</span>
+            </div>
+            <div class="nav-item" onclick="window.switchModule('monthly-summary', this)">
+                <div class="nav-icon"><i class="fas fa-chart-pie"></i></div><span class="nav-text">月度总结</span>
+            </div>
+        </div>
+        
+        <div class="sidebar-footer">
+            <div class="sidebar-btn-group w-full flex justify-end items-center px-2 transition-all duration-300">
+                <!-- 修改点 2：去掉了左下角的登出按钮 -->
+                <i class="fas fa-chevron-right toggle-btn text-xl" id="sidebar-toggle-btn" onclick="window.toggleSidebar()" title="展开"></i>
+            </div>
+        </div>
+    </nav>
+
+    <div class="mobile-header md:hidden">
+        <!-- 移动端顶部标题同样增加点击登出与 Hover 动画 -->
+        <div class="flex items-center gap-2 cursor-pointer group" onclick="window.showLogoutConfirmModal()">
+            <div class="flex items-center gap-2 transition-transform duration-200 ease-out group-hover:-translate-y-0.5 group-hover:scale-[1.02]">
+                <i class="fas fa-rocket text-white"></i>
+                <span class="font-bold text-lg text-white">个人空间站</span>
+            </div>
+        </div>
+        <div class="mobile-nav-items">
+            <div class="mobile-nav-item active" onclick="window.switchModule('calendar', this, true)">
+                <i class="fas fa-calendar-check"></i>
+            </div>
+            <div class="mobile-nav-item" onclick="window.switchModule('monthly-summary', this, true)">
+                <i class="fas fa-chart-pie"></i>
+            </div>
+        </div>
+    </div>
+
+    <div class="main-content">
+        
+        <div id="module-calendar" class="module-view active p-4 md:p-6 w-full h-full flex flex-col justify-center"> 
+            
+            <div class="w-full max-w-[1400px] mx-auto flex flex-col lg:flex-row items-stretch gap-6 max-h-full min-h-0">
+                
+                <div class="order-2 lg:order-1 flex-1 w-full min-w-0 flex flex-col min-h-0">
+                     <div class="calendar-scroll-container narrow-scrollbar flex-1 w-full pr-1 min-h-0 rounded-xl flex flex-col">
+                         <div class="calendar-wrapper mx-auto shadow-sm flex-1 flex flex-col">
+                            <div class="weekdays-header shadow-sm">
+                                <div class="weekday-cell">周一</div><div class="weekday-cell">周二</div><div class="weekday-cell">周三</div><div class="weekday-cell">周四</div><div class="weekday-cell">周五</div>
+                            </div>
+                            <div id="calendar-body" class="flex-1 flex flex-col"></div>
+                         </div>
+                     </div>
+                </div>
+        
+                <div class="order-1 lg:order-2 flex-shrink-0 flex flex-col w-full lg:w-[288px] gap-4 min-h-0">
+                     
+                     <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-1 flex items-center justify-between h-14 min-h-[3.5rem] w-full flex-shrink-0 relative z-30">
+                        <button id="prev-month" class="w-10 h-full flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-600"><i class="fas fa-chevron-left"></i></button>
+                        <button id="current-month-trigger" onclick="window.toggleCalendarMonthPicker(event)" class="text-sm font-bold text-[#171A1D] px-4 text-center flex-1 whitespace-nowrap h-full rounded-lg hover:bg-gray-50 transition"><span id="current-month-display"></span></button>
+                        <button id="next-month" class="w-10 h-full flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-600"><i class="fas fa-chevron-right"></i></button>
+                        <div id="calendar-month-picker" class="hidden absolute left-1/2 -translate-x-1/2 top-[3.75rem] z-40 w-[260px] rounded-2xl border border-gray-200 bg-white shadow-xl p-3">
+                            <div class="flex items-center justify-between px-2 pb-2"><button onclick="window.shiftCalendarPickerYear(-1)" class="w-7 h-7 rounded-lg hover:bg-gray-100 text-gray-500"><i class="fas fa-chevron-left text-xs"></i></button><span id="calendar-picker-title" class="text-sm font-bold text-gray-800"></span><button onclick="window.shiftCalendarPickerYear(1)" class="w-7 h-7 rounded-lg hover:bg-gray-100 text-gray-500"><i class="fas fa-chevron-right text-xs"></i></button></div>
+                            <div id="calendar-month-grid" class="grid grid-cols-3 gap-2"></div>
+                        </div>
+                     </div>
+
+                     <div class="flex flex-row lg:flex-col gap-3 w-full flex-shrink-0">
+                        <div class="bg-white rounded-xl shadow-sm border border-gray-100 flex items-center justify-center h-14 min-h-[3.5rem] hover:bg-gray-50 hover:-translate-y-1 hover:scale-[1.02] hover:shadow-md transition-all duration-200 ease-out cursor-default flex-1 lg:flex-none">
+                            <div class="inline-flex items-center text-left min-w-[70px]">
+                                <div class="w-2.5 h-2.5 rounded-full bg-black flex-shrink-0 mr-2"></div>
+                                <span class="text-sm font-bold text-gray-600 whitespace-nowrap mr-2">总任务</span>
+                                <span id="stat-total" class="font-bold text-gray-800">0</span>
+                            </div>
+                        </div>
+                        <div class="bg-white rounded-xl shadow-sm border border-gray-100 flex items-center justify-center h-14 min-h-[3.5rem] hover:bg-gray-50 hover:-translate-y-1 hover:scale-[1.02] hover:shadow-md transition-all duration-200 ease-out cursor-default flex-1 lg:flex-none">
+                            <div class="inline-flex items-center text-left min-w-[70px]">
+                                <div class="w-2.5 h-2.5 rounded-full bg-black flex-shrink-0 mr-2"></div>
+                                <span class="text-sm font-bold text-gray-600 whitespace-nowrap mr-2">完成</span>
+                                <span id="stat-completed" class="font-bold text-gray-800">0</span>
+                            </div>
+                        </div>
+                        <div class="bg-white rounded-xl shadow-sm border border-gray-100 flex items-center justify-center h-14 min-h-[3.5rem] cursor-pointer hover:bg-gray-50 hover:-translate-y-1 hover:scale-[1.02] hover:shadow-md transition-all duration-200 ease-out flex-1 lg:flex-none" onclick="window.openPendingListModal()">
+                            <div class="inline-flex items-center text-left min-w-[70px]">
+                                <div class="w-2.5 h-2.5 rounded-full bg-black flex-shrink-0 mr-2"></div>
+                                <span class="text-sm font-bold text-gray-600 whitespace-nowrap mr-2">待办</span>
+                                <span id="stat-pending" class="font-bold text-gray-800">0</span>
+                            </div>
+                        </div>
+                     </div>
+                     
+                     <div class="bg-white rounded-xl shadow-sm border border-gray-100 flex-1 min-h-0 flex flex-col w-full overflow-hidden relative z-10">
+                        <div class="py-2.5 px-4 text-sm font-bold text-red-500 bg-red-50/50 border-b border-red-100 flex-shrink-0 flex items-center justify-center gap-2">
+                            <i class="fas fa-fire"></i> 重要紧急
+                        </div>
+                        <div id="urgent-tasks-list" class="narrow-scrollbar flex-1 overflow-y-auto p-3 bg-white flex flex-col gap-2 relative">
+                        </div>
+                     </div>
+                     
+                </div>
+            </div>
+        </div>
+
+        <div id="module-monthly-summary" class="module-view h-full bg-[#F5F7FA]">
+            <div class="p-4 md:p-8 flex-1 overflow-y-auto h-full">
+                <div class="max-w-6xl mx-auto">
+                    <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+                        <div>
+                            <h1 class="text-2xl font-bold text-[#171A1D]">月度总结</h1>
+                            <p class="text-sm text-gray-400 mt-1">按月份查看任务完成情况与待推进事项</p>
+                        </div>
+                        <div class="relative flex items-center bg-white border border-gray-200 rounded-xl shadow-sm overflow-visible">
+                            <button onclick="window.shiftMonthlySummaryMonth(-1)" class="w-10 h-11 flex items-center justify-center text-gray-500 hover:bg-gray-50 transition" aria-label="上个月"><i class="fas fa-chevron-left text-xs"></i></button>
+                            <button id="monthly-summary-month-trigger" onclick="window.toggleMonthlyMonthPicker(event)" class="min-w-[150px] h-11 px-4 flex items-center justify-center gap-2 text-sm font-semibold text-gray-800 hover:bg-gray-50 transition"><i class="far fa-calendar-alt text-gray-400"></i><span id="monthly-summary-month-label"></span></button>
+                            <button onclick="window.shiftMonthlySummaryMonth(1)" class="w-10 h-11 flex items-center justify-center text-gray-500 hover:bg-gray-50 transition" aria-label="下个月"><i class="fas fa-chevron-right text-xs"></i></button>
+                            <div id="monthly-summary-month-picker" class="hidden absolute right-0 top-[3.25rem] z-40 w-[260px] rounded-2xl border border-gray-200 bg-white shadow-xl p-3">
+                                <div class="flex items-center justify-between px-2 pb-2"><button onclick="window.shiftMonthlySummaryMonth(-1)" class="w-7 h-7 rounded-lg hover:bg-gray-100 text-gray-500"><i class="fas fa-chevron-left text-xs"></i></button><span id="monthly-summary-picker-title" class="text-sm font-bold text-gray-800"></span><button onclick="window.shiftMonthlySummaryMonth(1)" class="w-7 h-7 rounded-lg hover:bg-gray-100 text-gray-500"><i class="fas fa-chevron-right text-xs"></i></button></div>
+                                <div id="monthly-summary-month-grid" class="grid grid-cols-3 gap-2"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="bg-black text-white rounded-2xl p-5 md:p-6 mb-5 relative overflow-hidden">
+                        <div class="absolute -right-8 -top-10 w-36 h-36 rounded-full border border-white/10"></div>
+                        <div class="absolute right-12 -bottom-16 w-28 h-28 rounded-full bg-white/5"></div>
+                        <p class="text-[11px] tracking-[0.2em] text-white/50 mb-2">MONTHLY OVERVIEW</p>
+                        <p id="monthly-summary-lead" class="text-base md:text-lg font-medium leading-relaxed relative z-10"></p>
+                    </div>
+
+                    <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
+                        <div class="bg-white rounded-2xl border border-gray-100 p-4"><div class="text-xs text-gray-400 mb-2">事项总数</div><div id="monthly-summary-total" class="text-2xl font-bold text-gray-900">0</div></div>
+                        <div class="bg-white rounded-2xl border border-gray-100 p-4"><div class="text-xs text-gray-400 mb-2">已完成</div><div id="monthly-summary-completed" class="text-2xl font-bold text-gray-900">0</div></div>
+                        <div class="bg-white rounded-2xl border border-gray-100 p-4"><div class="text-xs text-gray-400 mb-2">完成率</div><div id="monthly-summary-rate" class="text-2xl font-bold text-gray-900">0%</div></div>
+                        <div class="bg-white rounded-2xl border border-gray-100 p-4"><div class="text-xs text-gray-400 mb-2">重点紧急</div><div id="monthly-summary-urgent" class="text-2xl font-bold text-red-500">0</div></div>
+                    </div>
+
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                        <section class="bg-white rounded-2xl border border-red-100 overflow-hidden">
+                            <div class="px-5 py-4 border-b border-red-100 bg-red-50/50 flex items-center justify-between"><h2 class="font-bold text-red-600"><i class="fas fa-fire mr-2"></i>本月重点紧急事项</h2><span id="monthly-summary-urgent-count" class="text-xs text-red-400">0 项</span></div>
+                            <div id="monthly-summary-urgent-list" class="p-4 space-y-2 min-h-[120px]"></div>
+                        </section>
+                        <section class="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+                            <div class="px-5 py-4 border-b border-gray-100 flex items-center justify-between"><h2 class="font-bold text-gray-800"><i class="fas fa-clock text-amber-500 mr-2"></i>待推进事项</h2><span id="monthly-summary-pending-count" class="text-xs text-gray-400">0 项</span></div>
+                            <div id="monthly-summary-pending-list" class="p-4 space-y-2 min-h-[120px]"></div>
+                        </section>
+                    </div>
+
+                    <section class="bg-white rounded-2xl border border-gray-100 overflow-hidden mt-5">
+                        <div class="px-5 py-4 border-b border-gray-100 flex items-center justify-between"><div><h2 class="font-bold text-gray-800">可复制月报</h2><p class="text-xs text-gray-400 mt-1">已整理为适合汇报的结构化文本</p></div><button onclick="window.copyMonthlyReport()" class="bg-black text-white rounded-xl px-4 py-2 text-sm font-medium hover:bg-gray-800 transition flex items-center gap-2"><i class="far fa-copy"></i>复制月报</button></div>
+                        <pre id="monthly-report-content" class="whitespace-pre-wrap p-5 text-sm leading-8 text-gray-800 font-sans min-h-[180px]"></pre>
+                    </section>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 弹窗部分 -->
+    <div id="task-modal" class="fixed inset-0 hidden bg-black bg-opacity-40 flex items-center justify-center modal z-[60]">
+        <div class="bg-white w-full max-w-md modal-content rounded-3xl shadow-2xl">
+            <div class="px-6 py-5 border-b border-gray-100 flex justify-between items-center rounded-t-3xl">
+                <h3 id="modal-title" class="text-lg font-bold text-[#171A1D]">新建日程</h3>
+                <button onclick="window.closeModal('task-modal')" class="text-gray-400 hover:text-gray-600 text-xl">&times;</button>
+            </div>
+            <div class="p-6 space-y-6">
+                <input type="hidden" id="task-id">
+                
+                <div>
+                    <label class="block text-xs text-gray-400 mb-1.5">日程内容</label>
+                    <input type="text" id="task-title" required autocomplete="off" class="w-full text-lg font-medium text-[#171A1D] border-b border-gray-200 pb-1 focus:border-[var(--theme-primary)] outline-none transition-colors">
+                </div>
+                
+                <div class="flex items-center mt-1">
+                    <label class="flex items-center gap-1 cursor-pointer group select-none">
+                        <input type="checkbox" id="task-urgent" class="hidden peer" onchange="window.saveTaskLive()">
+                        <span class="text-sm font-bold text-gray-400 peer-checked:text-red-500 group-hover:text-red-400 transition-colors flex items-center">
+                            <i class="fas fa-fire mr-1"></i> 重要紧急
+                        </span>
+                    </label>
+                </div>
+
+                <div class="flex gap-4" id="task-date-container">
+                    <div class="flex-1 relative" data-datepicker-container="start">
+                        <label class="block text-xs text-gray-400 mb-1.5">开始时间</label>
+                        <div class="relative bg-gray-50 rounded-xl hover:bg-gray-100 transition group cursor-pointer" onclick="window.toggleDatepicker('task-start-date', 'start-date-picker', event)">
+                            <i class="fas fa-calendar-alt absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none text-sm"></i>
+                            <input type="text" id="task-start-date" readonly class="w-full py-2.5 px-3 bg-transparent border-none outline-none font-bold text-base text-center text-[#171A1D] pointer-events-none placeholder-gray-300" placeholder="待定">
+                        </div>
+                        <div id="start-date-picker" class="custom-datepicker absolute top-full mt-2 left-1/2 transform -translate-x-1/2 z-50 hidden"></div>
+                    </div>
+                    <div class="flex-1 relative" data-datepicker-container="end">
+                        <label class="block text-xs text-gray-400 mb-1.5">结束时间</label>
+                        <div class="relative bg-gray-50 rounded-xl hover:bg-gray-100 transition group cursor-pointer" onclick="window.toggleDatepicker('task-end-date', 'end-date-picker', event)">
+                            <i class="fas fa-calendar-alt absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none text-sm"></i>
+                            <input type="text" id="task-end-date" readonly class="w-full py-2.5 px-3 bg-transparent border-none outline-none font-bold text-base text-center text-[#171A1D] pointer-events-none placeholder-gray-300" placeholder="待定">
+                        </div>
+                        <div id="end-date-picker" class="custom-datepicker absolute top-full mt-2 left-1/2 transform -translate-x-1/2 z-50 hidden"></div>
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs text-gray-400 mb-1.5">备注</label>
+                    <div class="bg-gray-50 rounded-xl border border-transparent focus-within:border-[var(--theme-primary)] focus-within:bg-white transition-colors">
+                        <textarea id="task-desc" rows="3" autocomplete="off" class="w-full p-3 bg-transparent border-none outline-none text-sm text-[#171A1D] resize-none"></textarea>
+                    </div>
+                </div>
+                <div class="flex justify-end pt-2">
+                    <button type="button" id="btn-delete-in-modal" onclick="window.deleteCurrentEditingTask()" class="hidden text-red-500 hover:text-red-600 hover:bg-red-50 px-4 py-2 rounded-xl text-sm font-medium transition flex items-center gap-2"><i class="fas fa-trash-alt"></i> 删除日程</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div id="pending-list-modal" class="fixed inset-0 hidden bg-black bg-opacity-40 flex items-center justify-center modal p-4 z-[60]"><div class="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden modal-content flex flex-col max-h-[80vh]"><div class="px-6 py-4 border-b border-gray-100 flex justify-between items-center"><h3 class="text-lg font-bold text-[#171A1D]">本月待办事项</h3><button onclick="window.closeModal('pending-list-modal')" class="text-gray-400 hover:text-gray-600 text-2xl w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 transition">&times;</button></div><div id="pending-list-container" class="p-4 overflow-y-auto flex-1 bg-[#F5F7FA] space-y-3"></div></div></div>
+    
+    <div id="confirm-modal" class="fixed inset-0 hidden bg-black bg-opacity-40 flex items-center justify-center modal p-4 z-[70]">
+        <div class="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 modal-content text-center transform scale-100">
+            <div class="w-12 h-12 bg-red-50 rounded-full flex items-center justify-center mx-auto mb-4"><i class="fas fa-exclamation-triangle text-red-500 text-lg"></i></div>
+            <h3 class="text-lg font-bold text-[#171A1D] mb-2" id="confirm-title">确认删除</h3>
+            <p class="text-sm text-[#858E99] mb-6 px-4" id="confirm-msg">删除后无法恢复，确定要继续吗？</p>
+            <div class="flex gap-3">
+                <button onclick="window.cancelDelete()" class="flex-1 py-2.5 border border-gray-200 rounded-xl text-[#171A1D] font-medium hover:bg-gray-50 transition">取消</button>
+                <button id="confirm-delete-btn" class="flex-1 py-2.5 bg-red-500 text-white rounded-xl font-medium hover:bg-red-600 shadow-md transition">确定</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="folder-modal" class="fixed inset-0 hidden bg-black bg-opacity-40 flex items-center justify-center modal p-4 z-[60]">
+        <div class="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 modal-content text-center transform scale-100">
+            <h3 id="folder-modal-title" class="text-lg font-bold text-[#171A1D] mb-4">新建文件夹</h3>
+            <!-- 修改点 1：将焦点颜色的蓝色边框改为黑色 -->
+            <input type="text" id="folder-name-input" class="w-full border border-gray-200 rounded-xl px-4 py-2 mb-6 outline-none focus:border-black" placeholder="请输入文件夹名称" autocomplete="off">
+            <div class="flex gap-3">
+                <button onclick="window.closeModal('folder-modal')" class="flex-1 py-2.5 border border-gray-200 rounded-xl text-[#171A1D] font-medium hover:bg-gray-50 transition">取消</button>
+                <!-- 修改点 1：将按钮主色调修改为纯黑色 -->
+                <button onclick="window.confirmFolderAction()" class="flex-1 py-2.5 bg-black text-white rounded-xl font-medium hover:bg-gray-800 shadow-md transition">确定</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        /* --- 登录与登出逻辑 --- */
+        const IS_DEMO_MODE = true;
+        let isLoginMode = true;
+        window.toggleAuthMode = function() {
+            isLoginMode = !isLoginMode;
+            document.getElementById('auth-title').innerText = isLoginMode ? '欢迎回来！' : '创建账号';
+            document.getElementById('auth-submit-btn').innerText = isLoginMode ? '登 录' : '注 册';
+            document.getElementById('auth-toggle-prefix').innerText = isLoginMode ? '还没有账号？' : '已经有账号？';
+            document.getElementById('auth-toggle-text').innerText = isLoginMode ? '立即注册' : '直接登录';
+            document.getElementById('auth-error').classList.remove('show');
+        };
+
+        window.togglePasswordVisibility = function() {
+            const input = document.getElementById('auth-password');
+            input.type = input.type === 'password' ? 'text' : 'password';
+        };
+
+        const authArt = document.getElementById('auth-art');
+        const authAccount = document.getElementById('auth-account');
+        const authPassword = document.getElementById('auth-password');
+        const authError = document.getElementById('auth-error');
+        const authPasswordField = document.getElementById('auth-password-field');
+        const loginContainer = document.getElementById('login-container');
+        const setAuthState = state => { authArt.className = `auth-art ${state}`.trim(); };
+        const restartCharacterEntry = () => {
+            setAuthState('');
+            requestAnimationFrame(() => requestAnimationFrame(() => setAuthState('is-entering')));
+            setTimeout(() => { if (authArt.classList.contains('is-entering')) setAuthState(''); }, 1300);
+        };
+        authAccount.addEventListener('focus', () => setAuthState('email-active'));
+        authPassword.addEventListener('focus', () => setAuthState('password-active'));
+        document.getElementById('auth-form').addEventListener('focusout', (event) => {
+            if (!event.currentTarget.contains(event.relatedTarget)) setAuthState('');
+        });
+        authPassword.addEventListener('input', () => {
+            authPasswordField.classList.remove('has-error'); authError.classList.remove('show');
+            if (!authArt.classList.contains('password-active')) setAuthState('password-active');
+        });
+        loginContainer.addEventListener('pointermove', event => {
+            const rect = loginContainer.getBoundingClientRect();
+            const x = Math.max(-1, Math.min(1, (event.clientX - rect.left) / rect.width * 2 - 1));
+            const y = Math.max(-1, Math.min(1, (event.clientY - rect.top) / rect.height * 2 - 1));
+            authArt.style.setProperty('--body-x', `${x * 10}px`);
+            authArt.style.setProperty('--body-skew', `${-x * 11.5}deg`);
+            authArt.style.setProperty('--face-x', `${x * 34}px`); authArt.style.setProperty('--face-y', `${y * 21}px`);
+            authArt.style.setProperty('--pupil-x', `${x * 8}px`); authArt.style.setProperty('--pupil-y', `${y * 6.5}px`);
+        });
+        loginContainer.addEventListener('pointerleave', () => ['--body-x','--body-skew','--face-x','--face-y','--pupil-x','--pupil-y'].forEach(name => authArt.style.removeProperty(name)));
+        const authCharacters = [...authArt.querySelectorAll('.auth-character')];
+        const scheduleBlink = () => {
+            setTimeout(() => {
+                if (!loginContainer.classList.contains('hidden')) {
+                    const character = authCharacters[Math.floor(Math.random() * authCharacters.length)];
+                    character.classList.add('is-blinking');
+                    setTimeout(() => character.classList.remove('is-blinking'), 130);
+                }
+                scheduleBlink();
+            }, 700 + Math.random() * 1200);
+        };
+        scheduleBlink();
+        restartCharacterEntry();
+
+        window.login = function() {
+            return window.handleAuthSubmit();
+        };
+
+        // 呼出登出确认弹板
+        window.showLogoutConfirmModal = function() {
+            window.showModal('logout-confirm-modal');
+        };
+
+        // 执行登出操作
+        window.executeLogout = function() {
+            return window.handleLogout();
+        };
+
+        /* --- 原应用逻辑 --- */
+        window.renderNotes = function() {
+            const grid = document.getElementById('notes-grid');
+            if(!grid) return;
+            grid.innerHTML = '';
+            
+            const breadcrumb = document.getElementById('note-breadcrumb');
+            let crumbs = [];
+            let curr = DB.folders.find(f => f.id === currentFolderId);
+            while(curr && curr.id !== 'default') {
+                crumbs.unshift(curr);
+                curr = DB.folders.find(f => f.id === curr.parentId);
+            }
+            crumbs.unshift(DB.folders.find(f => f.id === 'default'));
+            
+            let bcHtml = '';
+            crumbs.forEach((c, i) => {
+                if (i === crumbs.length - 1) {
+                    bcHtml += `<span class="text-black">${c.name}</span>`;
+                } else {
+                    bcHtml += `<span class="text-gray-400 cursor-pointer hover:text-black transition-colors" onclick="window.switchFolder('${c.id}')">${c.name}</span>`;
+                    bcHtml += `<span class="text-gray-300 mx-2">/</span>`;
+                }
+            });
+            if(currentFolderId !== 'default') {
+                bcHtml = `<i class="fas fa-arrow-left text-gray-400 cursor-pointer hover:text-black mr-2 transition-colors" onclick="window.goBackFolder()"></i>` + bcHtml;
+            }
+            if (breadcrumb) breadcrumb.innerHTML = bcHtml;
+
+            const subFolders = DB.folders.filter(f => f.parentId === currentFolderId);
+            subFolders.forEach(f => {
+                const el = document.createElement('div');
+                el.className = 'folder-card p-4 rounded-xl flex flex-col items-center justify-center cursor-pointer h-40 relative group';
+                el.innerHTML = `
+                    <i class="fas fa-folder text-4xl mb-2 text-black"></i>
+                    <span class="font-medium text-gray-700 truncate w-full text-center px-2">${f.name}</span>
+                    <span class="text-xs text-gray-400 mt-1">${getTotalNoteCount(f.id)} 笔记</span>
+                `;
+                el.onclick = () => window.switchFolder(f.id);
+                el.oncontextmenu = (e) => window.showContextMenu(e, 'folder', f.id);
+                el.draggable = true;
+                el.ondragstart = (e) => window.startNoteDrag(e, f.id, 'folder');
+                el.ondragover = (e) => {
+                    e.preventDefault();
+                    if (window.draggedNoteId || (window.draggedFolderId && window.draggedFolderId !== f.id)) el.classList.add('drag-over');
+                };
+                el.ondragleave = () => el.classList.remove('drag-over');
+                el.ondrop = (e) => {
+                    e.preventDefault(); el.classList.remove('drag-over');
+                    if (window.draggedNoteId) {
+                        const note = DB.notes.find(n => n.id === window.draggedNoteId);
+                        if (note) { note.folderId = f.id; saveData(); window.renderNotes(); }
+                        window.draggedNoteId = null;
+                    } else if (window.draggedFolderId && window.draggedFolderId !== f.id) {
+                        const draggedF = DB.folders.find(xf => xf.id === window.draggedFolderId);
+                        if (draggedF) { draggedF.parentId = f.id; saveData(); window.renderNotes(); }
+                        window.draggedFolderId = null;
+                    }
+                };
+                grid.appendChild(el);
+            });
+
+            const notes = DB.notes.filter(n => n.folderId === currentFolderId);
+            notes.forEach(n => {
+                const el = document.createElement('div');
+                el.className = 'note-card bg-white p-5 rounded-xl border border-gray-100 shadow-sm cursor-pointer h-40 flex flex-col relative transition-all hover:border-black';
+                const div = document.createElement('div'); div.innerHTML = n.content || '';
+                const text = div.textContent || div.innerText || '';
+                el.innerHTML = `
+                    <h3 class="font-bold text-gray-800 mb-2 truncate">${n.title || '无标题'}</h3>
+                    <p class="text-sm text-gray-400 line-clamp-4 flex-1 break-all">${text.substring(0, 100)}</p>
+                    <span class="text-xs text-gray-300 mt-2">${n.updatedAt ? formatDate(new Date(n.updatedAt)) : '刚刚'}</span>
+                `;
+                el.onclick = () => window.openNote(n.id);
+                el.oncontextmenu = (e) => window.showContextMenu(e, 'note', n.id);
+                el.draggable = true;
+                el.ondragstart = (e) => window.startNoteDrag(e, n.id, 'note');
+                el.ondragover = (e) => { e.preventDefault(); if (window.draggedNoteId && window.draggedNoteId !== n.id) el.classList.add('merge-target'); };
+                el.ondragleave = () => el.classList.remove('merge-target');
+                el.ondrop = (e) => {
+                    e.preventDefault(); el.classList.remove('merge-target');
+                    if (window.draggedNoteId && window.draggedNoteId !== n.id) {
+                         window.pendingMerge = { sourceId: window.draggedNoteId, targetId: n.id };
+                         window.openFolderModal(); window.draggedNoteId = null;
+                    }
+                };
+                grid.appendChild(el);
+            });
+        };
+
+        const DB = {
+            tasks: JSON.parse(localStorage.getItem('tasks') || '[]'),
+            notes: JSON.parse(localStorage.getItem('notes') || '[]'),
+            folders: JSON.parse(localStorage.getItem('folders') || '[{"id":"default","name":"我的笔记"}]')
+        };
+
+        let supabaseClient = null;
+        let currentUser = null;
+        let cloudSaveTimer = null;
+        let cloudSyncTimer = null;
+        let isCloudSaving = false;
+        let isCloudRefreshing = false;
+        let localChangeVersion = 0;
+        let savedChangeVersion = 0;
+        let lastCloudSnapshot = '';
+
+        function defaultUserData() {
+            if (IS_DEMO_MODE) {
+                const now = new Date();
+                const date = day => formatDate(new Date(now.getFullYear(), now.getMonth(), day));
+                return { tasks: [
+                    { id: 'demo-1', title: '完成项目需求梳理', desc: '整理需求范围并确认本月迭代优先级', startDate: date(3), endDate: date(4), completed: true, isUrgent: false },
+                    { id: 'demo-2', title: '优化任务管理器多设备同步', desc: '解决不同设备间数据需要刷新才能同步的问题', startDate: date(5), endDate: date(7), completed: true, isUrgent: true },
+                    { id: 'demo-3', title: '整理月度客户反馈', desc: '汇总常见问题并形成后续优化清单', startDate: date(10), endDate: date(10), completed: true, isUrgent: false },
+                    { id: 'demo-4', title: '推进新功能交互设计', desc: '完成月度总结功能的交互方案和预览稿', startDate: date(13), endDate: date(17), completed: false, isUrgent: true },
+                    { id: 'demo-5', title: '准备部门月度复盘', desc: '整理本月成果、遗留问题和下月计划', startDate: date(20), endDate: date(22), completed: false, isUrgent: false },
+                    { id: 'demo-6', title: '跟进数据报表异常', desc: '核对异常指标并完成原因排查', startDate: date(now.getDate()), endDate: date(now.getDate()), completed: false, isUrgent: true }
+                ], notes: [], folders: [{ id: 'default', name: '演示任务' }] };
+            }
+            return { tasks: [], notes: [], folders: [{ id: 'default', name: '我的笔记' }] };
+        }
+
+        function applyUserData(data) {
+            const safe = data || defaultUserData();
+            DB.tasks = Array.isArray(safe.tasks) ? safe.tasks : [];
+            DB.notes = Array.isArray(safe.notes) ? safe.notes : [];
+            DB.folders = Array.isArray(safe.folders) && safe.folders.length ? safe.folders : [{ id: 'default', name: '我的笔记' }];
+        }
+
+        function getUserDataSnapshot() {
+            return { tasks: DB.tasks, notes: DB.notes, folders: DB.folders };
+        }
+
+        function showAuthMessage(message, isError = true) {
+            authError.innerText = message;
+            authError.style.color = isError ? '#ef4444' : '#16a34a';
+            authError.classList.add('show');
+            authPasswordField.classList.toggle('has-error', isError);
+        }
+
+        function setAuthBusy(busy) {
+            const button = document.getElementById('auth-submit-btn');
+            button.disabled = busy;
+            button.style.opacity = busy ? '.65' : '1';
+            button.innerText = busy ? '请稍候…' : (isLoginMode ? '登 录' : '注 册');
+        }
+
+        function parseAuthEmail(value) {
+            const email = value.trim().toLowerCase();
+            return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : '';
+        }
+
+        function getFriendlyAuthError(error) {
+            const message = error && error.message ? error.message : '';
+            if (/invalid login credentials/i.test(message)) return '邮箱或密码错误，请检查后重试';
+            return message || '登录失败，请重试';
+        }
+
+        function refreshUserViews() {
+            if (typeof renderCalendarView === 'function') renderCalendarView();
+            if (typeof window.renderSideTasks === 'function') window.renderSideTasks();
+            if (typeof window.renderMonthlySummary === 'function') window.renderMonthlySummary();
+        }
+
+        async function pushCloudData() {
+            cloudSaveTimer = null;
+            if (!supabaseClient || !currentUser) return;
+            if (isCloudSaving) {
+                cloudSaveTimer = setTimeout(pushCloudData, 500);
+                return;
+            }
+            const userId = currentUser.id;
+            const changeVersion = localChangeVersion;
+            const snapshot = getUserDataSnapshot();
+            isCloudSaving = true;
+            let savedRow = null;
+            let error = null;
+            try {
+                const result = await supabaseClient.from('user_data').upsert({
+                    user_id: userId,
+                    data: snapshot,
+                    updated_at: new Date().toISOString()
+                }, { onConflict: 'user_id' }).select('data').single();
+                savedRow = result.data;
+                error = result.error;
+            } catch (syncError) {
+                error = syncError;
+            }
+            isCloudSaving = false;
+            if (!currentUser || currentUser.id !== userId) return;
+            const status = document.getElementById('save-status');
+            if (status) status.innerText = error ? '云端同步失败' : '已同步';
+            if (error) {
+                console.error('Supabase sync failed:', error.message);
+                if (!cloudSaveTimer) cloudSaveTimer = setTimeout(pushCloudData, 3000);
+                return;
+            }
+            savedChangeVersion = Math.max(savedChangeVersion, changeVersion);
+            lastCloudSnapshot = JSON.stringify(savedRow && savedRow.data ? savedRow.data : snapshot);
+            if (localChangeVersion > savedChangeVersion && !cloudSaveTimer) cloudSaveTimer = setTimeout(pushCloudData, 500);
+        }
+
+        function queueCloudSave() {
+            localChangeVersion += 1;
+            clearTimeout(cloudSaveTimer);
+            cloudSaveTimer = setTimeout(pushCloudData, 500);
+        }
+
+        async function refreshCloudData() {
+            if (!supabaseClient || !currentUser || isCloudRefreshing || isCloudSaving || cloudSaveTimer || localChangeVersion !== savedChangeVersion) return;
+            const userId = currentUser.id;
+            const refreshVersion = localChangeVersion;
+            isCloudRefreshing = true;
+            try {
+                const { data, error } = await supabaseClient.from('user_data').select('data').eq('user_id', userId).maybeSingle();
+                if (error) throw error;
+                if (!currentUser || currentUser.id !== userId || !data || !data.data) return;
+                if (isCloudSaving || cloudSaveTimer || localChangeVersion !== refreshVersion) return;
+                const remoteSnapshot = JSON.stringify(data.data);
+                if (remoteSnapshot === lastCloudSnapshot) return;
+                applyUserData(data.data);
+                lastCloudSnapshot = remoteSnapshot;
+                localStorage.setItem(`user_data_${userId}`, JSON.stringify(getUserDataSnapshot()));
+                refreshUserViews();
+                if (typeof window.renderMonthlySummary === 'function') window.renderMonthlySummary();
+                const status = document.getElementById('save-status');
+                if (status) status.innerText = '已从云端更新';
+            } catch (error) {
+                console.error('Supabase refresh failed:', error.message);
+            } finally {
+                isCloudRefreshing = false;
+            }
+        }
+
+        function startCloudSync() {
+            clearInterval(cloudSyncTimer);
+            cloudSyncTimer = setInterval(() => { if (!document.hidden) refreshCloudData(); }, 5000);
+        }
+
+        function stopCloudSync() {
+            clearInterval(cloudSyncTimer);
+            cloudSyncTimer = null;
+        }
+
+        window.addEventListener('focus', refreshCloudData);
+        document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshCloudData(); });
+
+        async function loadUserData(user) {
+            stopCloudSync();
+            currentUser = user;
+            localChangeVersion = 0;
+            savedChangeVersion = 0;
+            lastCloudSnapshot = '';
+            const localKey = `user_data_${user.id}`;
+            const { data, error } = await supabaseClient.from('user_data').select('data').eq('user_id', user.id).maybeSingle();
+            if (error) throw error;
+            if (data && data.data) {
+                applyUserData(data.data);
+                lastCloudSnapshot = JSON.stringify(data.data);
+            } else {
+                const cached = localStorage.getItem(localKey);
+                if (cached) {
+                    applyUserData(JSON.parse(cached));
+                } else if (!localStorage.getItem('legacy_data_migrated')) {
+                    localStorage.setItem('legacy_data_migrated', '1');
+                } else {
+                    applyUserData(defaultUserData());
+                }
+                await pushCloudData();
+            }
+            localStorage.setItem(localKey, JSON.stringify(getUserDataSnapshot()));
+            refreshUserViews();
+            startCloudSync();
+        }
+
+        async function initializeBackendAuth() {
+            if (IS_DEMO_MODE) {
+                applyUserData(defaultUserData());
+                return false;
+            }
+            const config = window.SUPABASE_CONFIG || {};
+            if (!window.supabase || !config.url || !config.anonKey || config.url.includes('YOUR_')) {
+                showAuthMessage('尚未配置云端服务，请先填写 supabase-config.js', true);
+                return false;
+            }
+            supabaseClient = window.supabase.createClient(config.url, config.anonKey);
+            const { data: { session } } = await supabaseClient.auth.getSession();
+            if (session && session.user) {
+                await loadUserData(session.user);
+                loginContainer.classList.add('hidden');
+                return true;
+            }
+            return false;
+        }
+
+        window.handleAuthSubmit = async function() {
+            const email = parseAuthEmail(authAccount.value);
+            const password = authPassword.value;
+            authError.classList.remove('show'); authPasswordField.classList.remove('has-error');
+            if (!email || password.length < 6) {
+                setAuthState('error-active'); showAuthMessage('请输入有效邮箱，密码至少需要 6 位', true);
+                setTimeout(() => setAuthState('password-active'), 650);
+                return;
+            }
+            if (IS_DEMO_MODE) {
+                applyUserData(defaultUserData());
+                loginContainer.classList.add('hidden');
+                refreshUserViews();
+                return;
+            }
+            if (!supabaseClient) {
+                showAuthMessage('云端服务尚未配置', true);
+                return;
+            }
+            setAuthBusy(true);
+            try {
+                const credentials = { email, password };
+                if (isLoginMode) {
+                    const { data, error } = await supabaseClient.auth.signInWithPassword(credentials);
+                    if (error) throw error;
+                    await loadUserData(data.user);
+                    loginContainer.classList.add('hidden');
+                    setTimeout(() => { if (typeof adjustRowHeights === 'function') adjustRowHeights(); }, 50);
+                } else {
+                    const { data, error } = await supabaseClient.auth.signUp({
+                        ...credentials,
+                        options: { emailRedirectTo: 'https://yanglu970608-bit.github.io/work-task-manager/' }
+                    });
+                    if (error) throw error;
+                    if (data.session && data.user) {
+                        await loadUserData(data.user);
+                        loginContainer.classList.add('hidden');
+                    } else {
+                        showAuthMessage('注册成功，请打开邮箱完成验证后再登录', false);
+                    }
+                }
+            } catch (error) {
+                setAuthState('error-active');
+                showAuthMessage(getFriendlyAuthError(error), true);
+                setTimeout(() => setAuthState('password-active'), 650);
+            } finally {
+                setAuthBusy(false);
+            }
+        };
+
+        window.handleLogout = async function() {
+            window.closeModal('logout-confirm-modal');
+            if (cloudSaveTimer || localChangeVersion !== savedChangeVersion) {
+                clearTimeout(cloudSaveTimer);
+                cloudSaveTimer = null;
+                await pushCloudData();
+            }
+            stopCloudSync();
+            if (supabaseClient) await supabaseClient.auth.signOut();
+            currentUser = null;
+            localChangeVersion = 0;
+            savedChangeVersion = 0;
+            lastCloudSnapshot = '';
+            applyUserData(defaultUserData());
+            setTimeout(() => {
+                loginContainer.classList.remove('hidden');
+                document.getElementById('auth-form').reset();
+                authPasswordField.classList.remove('has-error'); authError.classList.remove('show'); restartCharacterEntry();
+            }, 300);
+        };
+        
+        window.isDraggingTask = false;
+        let longPressTimer = null;
+        let isLongPressMode = false;
+        let startClickPos = {x:0, y:0};
+
+        let currentDate = new Date();
+        let calendarToday = formatDate(new Date());
+        let calendarRolloverTimer = null;
+        let currentFolderId = 'default';
+        let currentNoteId = null;
+        let taskToDeleteId = null;
+        let deleteSource = null; 
+        let datepickerState = { 'task-start-date': new Date(), 'task-end-date': new Date() };
+        let dragTask = null; 
+        let dragGhost = null; 
+        let dragOffset = { x: 0, y: 0 }; 
+        window.draggedNoteId = null; 
+        window.draggedFolderId = null;
+        
+        window.pendingMerge = { sourceId: null, targetId: null };
+        window.activeFolderId = null; 
+        window.contextTarget = null;
+        window.currentConfirmAction = null;
+        window.isToolbarPinned = false;
+
+        function saveData() {
+            localStorage.setItem('tasks', JSON.stringify(DB.tasks));
+            localStorage.setItem('notes', JSON.stringify(DB.notes));
+            localStorage.setItem('folders', JSON.stringify(DB.folders));
+            if (currentUser) {
+                localStorage.setItem(`user_data_${currentUser.id}`, JSON.stringify(getUserDataSnapshot()));
+                queueCloudSave();
+            }
+        }
+
+        function parseDateStr(s) { if (!s) return new Date(); if (s instanceof Date) return s; if (typeof s === 'string') { const p = s.split('-').map(Number); if(p.length === 3) return new Date(p[0], p[1] - 1, p[2]); } return new Date(); }
+        function formatDate(d) { const y = d.getFullYear(); const m = String(d.getMonth() + 1).padStart(2, '0'); const day = String(d.getDate()).padStart(2, '0'); return `${y}-${m}-${day}`; }
+
+        function syncCalendarToday() {
+            const now = new Date();
+            const today = formatDate(now);
+            if (today === calendarToday) return;
+            const previousToday = parseDateStr(calendarToday);
+            const followsCurrentMonth = currentDate.getFullYear() === previousToday.getFullYear() && currentDate.getMonth() === previousToday.getMonth();
+            calendarToday = today;
+            if (followsCurrentMonth && (currentDate.getFullYear() !== now.getFullYear() || currentDate.getMonth() !== now.getMonth())) {
+                currentDate = new Date(now.getFullYear(), now.getMonth(), 1);
+                renderCalendarView();
+                return;
+            }
+            document.querySelectorAll('.day-bg-col.today').forEach(day => day.classList.remove('today'));
+            document.querySelectorAll(`.day-bg-col[data-date="${today}"]`).forEach(day => day.classList.add('today'));
+        }
+
+        function scheduleCalendarRollover() {
+            clearTimeout(calendarRolloverTimer);
+            const now = new Date();
+            const nextMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+            calendarRolloverTimer = setTimeout(() => {
+                syncCalendarToday();
+                scheduleCalendarRollover();
+            }, Math.max(1000, nextMidnight.getTime() - now.getTime() + 250));
+        }
+
+        window.toggleSidebarMobile = function() {};
+        window.closeSidebarMobile = function() {};
+
+        function updateStats() {
+            const cm = currentDate.getMonth();
+            const cy = currentDate.getFullYear();
+            const monthlyTasks = DB.tasks.filter(t => {
+                if(!t.startDate) return false;
+                const d = parseDateStr(t.startDate);
+                return d.getMonth() === cm && d.getFullYear() === cy;
+            });
+            const total = monthlyTasks.length;
+            const completed = monthlyTasks.filter(x => x.completed).length;
+            document.getElementById('stat-total').textContent = total;
+            document.getElementById('stat-completed').textContent = completed;
+            document.getElementById('stat-pending').textContent = total - completed;
+        }
+
+        function getMonthlySummaryTasks(monthValue) {
+            const base = monthValue ? new Date(`${monthValue}-01T00:00:00`) : new Date();
+            const year = base.getFullYear(), month = base.getMonth();
+            const monthStart = new Date(year, month, 1);
+            const monthEnd = new Date(year, month + 1, 0, 23, 59, 59);
+            return DB.tasks.filter(task => {
+                if (!task.startDate && !task.endDate) return false;
+                const start = task.startDate ? parseDateStr(task.startDate) : monthStart;
+                const end = task.endDate ? parseDateStr(task.endDate) : start;
+                end.setHours(23, 59, 59, 999);
+                return start <= monthEnd && end >= monthStart;
+            });
+        }
+
+        window.renderMonthlySummary = function(monthValue) {
+            const input = document.getElementById('monthly-summary-month');
+            const now = new Date();
+            const value = monthValue || window.monthlySummaryMonth || `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+            window.monthlySummaryMonth = value;
+            const tasks = getMonthlySummaryTasks(value);
+            const [year, month] = value.split('-').map(Number);
+            const completed = tasks.filter(task => task.completed).length;
+            const urgent = tasks.filter(task => task.isUrgent);
+            const pending = tasks.filter(task => !task.completed);
+            const rate = tasks.length ? Math.round(completed / tasks.length * 100) : 0;
+            const monthLabel = `${year}年${month}月`;
+            const monthLabelEl = document.getElementById('monthly-summary-month-label');
+            if (monthLabelEl) monthLabelEl.textContent = monthLabel;
+            const pickerTitle = document.getElementById('monthly-summary-picker-title');
+            if (pickerTitle) pickerTitle.textContent = `${year}年`;
+            const pickerGrid = document.getElementById('monthly-summary-month-grid');
+            if (pickerGrid) {
+                pickerGrid.innerHTML = Array.from({ length: 12 }, (_, index) => {
+                    const monthValueOption = `${year}-${String(index + 1).padStart(2, '0')}`;
+                    const selected = monthValueOption === value;
+                    return `<button onclick="window.renderMonthlySummary('${monthValueOption}'); window.closeMonthlyMonthPicker()" class="rounded-lg py-2 text-sm ${selected ? 'bg-black text-white' : 'text-gray-600 hover:bg-gray-100'}">${index + 1}月</button>`;
+                }).join('');
+            }
+
+            document.getElementById('monthly-summary-lead').textContent = tasks.length
+                ? `${monthLabel}共记录 ${tasks.length} 项工作，已完成 ${completed} 项，整体完成率 ${rate}%。目前还有 ${pending.length} 项需要继续推进。`
+                : `${monthLabel}暂无任务记录。`;
+            document.getElementById('monthly-summary-total').textContent = tasks.length;
+            document.getElementById('monthly-summary-completed').textContent = completed;
+            document.getElementById('monthly-summary-rate').textContent = `${rate}%`;
+            document.getElementById('monthly-summary-urgent').textContent = urgent.length;
+            document.getElementById('monthly-summary-urgent-count').textContent = `${urgent.length} 项`;
+            document.getElementById('monthly-summary-pending-count').textContent = `${pending.length} 项`;
+
+            const renderList = (id, items, emptyText, urgentStyle = false) => {
+                const list = document.getElementById(id);
+                if (!list) return;
+                list.innerHTML = items.length ? items.map(task => `<div class="flex items-center justify-between gap-3 rounded-xl border ${urgentStyle ? 'border-red-100 bg-red-50/30' : 'border-gray-100 bg-gray-50/60'} px-4 py-3"><span class="text-sm text-gray-800 break-words">${task.title || '未命名事项'}</span>${urgentStyle ? '<span class="text-[11px] text-red-400 bg-red-100 rounded-full px-2 py-0.5 flex-shrink-0">紧急</span>' : ''}</div>`).join('') : `<div class="py-8 text-center text-sm text-gray-400">${emptyText}</div>`;
+            };
+            renderList('monthly-summary-urgent-list', urgent, '本月暂无重点紧急事项', true);
+            renderList('monthly-summary-pending-list', pending, '本月暂无待推进事项');
+            const report = `${year}年${month}月\n\n${sectionText('一：本月完成重点事项', tasks.filter(task => task.completed && task.isUrgent))}\n\n${sectionText('二：本月完成其他事项', tasks.filter(task => task.completed && !task.isUrgent))}\n\n${sectionText('三：下月待办事项', pending)}`;
+            const reportEl = document.getElementById('monthly-report-content');
+            if (reportEl) reportEl.textContent = report;
+        };
+
+        function sectionText(title, items) { return `${title}\n${items.length ? items.map((task, index) => `${index + 1}. ${task.title || '未命名事项'}`).join('\n') : '暂无'}`; }
+        window.shiftMonthlySummaryMonth = function(offset) { const current = window.monthlySummaryMonth || `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`; const date = new Date(`${current}-01T00:00:00`); date.setMonth(date.getMonth() + offset); window.renderMonthlySummary(`${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`); };
+        window.toggleMonthlyMonthPicker = function(event) { if (event) event.stopPropagation(); const picker = document.getElementById('monthly-summary-month-picker'); if (picker) picker.classList.toggle('hidden'); };
+        window.closeMonthlyMonthPicker = function() { const picker = document.getElementById('monthly-summary-month-picker'); if (picker) picker.classList.add('hidden'); };
+
+        window.copyMonthlyReport = async function() {
+            const value = window.monthlySummaryMonth || `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
+            const tasks = getMonthlySummaryTasks(value);
+            const [year, month] = value.split('-').map(Number);
+            const completedUrgent = tasks.filter(task => task.completed && task.isUrgent);
+            const completedOther = tasks.filter(task => task.completed && !task.isUrgent);
+            const pending = tasks.filter(task => !task.completed);
+            const report = `${year}年${month}月\n\n${sectionText('一：本月完成重点事项', completedUrgent)}\n\n${sectionText('二：本月完成其他事项', completedOther)}\n\n${sectionText('三：下月待办事项', pending)}`;
+            const reportEl = document.getElementById('monthly-report-content');
+            if (reportEl) reportEl.textContent = report;
+            try {
+                await navigator.clipboard.writeText(report);
+                if (typeof window.showToast === 'function') window.showToast('月报已复制');
+            } catch (error) {
+                const area = document.createElement('textarea'); area.value = report; document.body.appendChild(area); area.select(); document.execCommand('copy'); area.remove();
+                if (typeof window.showToast === 'function') window.showToast('月报已复制');
+            }
+        };
+
+        function getTasksInRange(s, e) { 
+            const end = parseDateStr(e); end.setHours(23,59); 
+            return DB.tasks.filter(t => t.startDate && t.endDate && parseDateStr(t.startDate)<=end && parseDateStr(t.endDate)>=s); 
+        }
+
+        window.renderSideTasks = function() {
+            const urgentList = document.getElementById('urgent-tasks-list');
+            if (!urgentList) return;
+            
+            urgentList.innerHTML = '';
+            
+            let urgentTasks = DB.tasks.filter(t => t.isUrgent && !t.completed);
+            urgentTasks.sort((a, b) => {
+                if (!a.startDate && !b.startDate) return 0;
+                if (!a.startDate) return 1;
+                if (!b.startDate) return -1;
+                return new Date(a.startDate) - new Date(b.startDate);
+            });
+            
+            if (urgentTasks.length === 0) {
+                urgentList.innerHTML = `<div class="flex-1 flex flex-col items-center justify-center text-gray-400 mt-2 text-center">
+                    <i class="fas fa-fire text-2xl mb-1 opacity-30 text-red-200"></i>
+                    <span class="text-xs">暂无紧急</span>
+                </div>`;
+            } else {
+                urgentTasks.forEach(t => {
+                    const el = document.createElement('div');
+                    const today = formatDate(new Date());
+                    const isDueToday = t.endDate === today;
+                    el.className = `side-task-card ${isDueToday ? 'bg-red-50 border-red-100 border-l-[3px] border-l-red-500' : 'bg-white border-red-200 border-l-[3px] border-l-red-500'} p-2.5 rounded-lg shadow-sm cursor-grab hover:shadow-md transition relative group`;
+                    
+                    if (t.desc) el.setAttribute('data-desc', t.desc);
+                    
+                    el.innerHTML = `
+                        <div class="flex items-start justify-between gap-1.5 pointer-events-none">
+                            <div class="font-bold text-[13px] text-gray-800 break-words leading-snug flex-1">${t.title}</div>
+                            <i class="fas fa-fire text-red-500 text-[10px] flex-shrink-0 mt-0.5"></i>
+                        </div>
+                        ${t.startDate ? `<div class="text-[9px] ${isDueToday ? 'text-red-400 bg-red-100' : 'text-gray-400 bg-gray-50'} mt-1.5 inline-block px-1.5 py-0.5 rounded pointer-events-none break-all"><i class="far fa-calendar-alt"></i> ${t.startDate}</div>` : ''}
+                    `;
+                    
+                    el.onmousedown = (e) => {
+                        window.isLongPressMode = false;
+                        startClickPos = {x: e.clientX, y: e.clientY};
+                        longPressTimer = setTimeout(() => {
+                            window.isLongPressMode = true;
+                            window.startTaskDrag(e, t.id, true);
+                        }, 100);
+                    };
+                    el.onmousemove = (e) => {
+                        if (!window.isLongPressMode && longPressTimer) {
+                            const moveDist = Math.sqrt(Math.pow(e.clientX - startClickPos.x, 2) + Math.pow(e.clientY - startClickPos.y, 2));
+                            if (moveDist > 10) { 
+                                clearTimeout(longPressTimer);
+                                longPressTimer = null;
+                                window.isLongPressMode = true;
+                                window.startTaskDrag(e, t.id, false);
+                            }
+                        }
+                    };
+                    el.onmouseup = (e) => {
+                        if (longPressTimer) {
+                            clearTimeout(longPressTimer);
+                            longPressTimer = null;
+                        }
+                        if (!window.isLongPressMode && !window.isDraggingTask) {
+                            window.openEditModal(t);
+                        }
+                    };
+                    urgentList.appendChild(el);
+                });
+            }
+        };
+
+        function handleDropTask(e, dateStr) { 
+            e.preventDefault(); 
+            if (!dragTask) return; 
+            
+            const sidePanel = document.getElementById('urgent-tasks-list')?.parentElement;
+            let droppedOnSidePanel = false;
+            if (sidePanel) {
+                const rect = sidePanel.getBoundingClientRect();
+                if (e.clientX >= rect.left && e.clientX <= rect.right && e.clientY >= rect.top && e.clientY <= rect.bottom) {
+                    droppedOnSidePanel = true;
+                }
+            }
+
+            if (droppedOnSidePanel) {
+                dragTask.startDate = '';
+                dragTask.endDate = '';
+                saveData();
+                renderCalendarView();
+                window.renderSideTasks();
+            } else {
+                const oldStart = parseDateStr(dragTask.startDate);
+                const duration = Math.round((parseDateStr(dragTask.endDate) - oldStart) / 86400000);
+                const newStart = parseDateStr(dateStr);
+                const newEnd = new Date(newStart);
+                newEnd.setDate(newStart.getDate() + (isNaN(duration) ? 0 : duration));
+                dragTask.startDate = formatDate(newStart);
+                dragTask.endDate = formatDate(newEnd);
+                saveData();
+                renderCalendarView();
+                window.renderSideTasks();
+            }
+            dragTask = null;
+        }
+
+        function initResize(e, t, type, barElement) { 
+            e.stopPropagation(); 
+            e.preventDefault(); 
+            const startX = e.clientX; 
+            const row = e.target.closest('.week-row'); 
+            const colWidth = row.offsetWidth / 5; 
+            const startLeft = barElement.offsetLeft;
+            const startWidth = barElement.offsetWidth;
+            const originalStart = parseDateStr(t.startDate);
+            const originalEnd = parseDateStr(t.endDate);
+            
+            barElement.style.transition = 'none';
+
+            const onMove = (em) => {
+                const diffX = em.clientX - startX; 
+                if (type === 'end') {
+                    const newWidth = Math.max(20, startWidth + diffX);
+                    barElement.style.width = newWidth + 'px';
+                } else {
+                    const newLeft = startLeft + diffX;
+                    const newWidth = startWidth - diffX;
+                    if (newWidth > 20) {
+                        barElement.style.left = newLeft + 'px';
+                        barElement.style.width = newWidth + 'px';
+                    }
+                }
+            };
+            const onUp = (eu) => { 
+                document.removeEventListener('mousemove', onMove); 
+                document.removeEventListener('mouseup', onUp); 
+                barElement.style.transition = '';
+                const finalDiffX = eu.clientX - startX;
+                const dayDiff = Math.round(finalDiffX / colWidth); 
+                if (dayDiff !== 0) { 
+                    if (type === 'start') { const d = new Date(originalStart); d.setDate(d.getDate() + dayDiff); t.startDate = formatDate(d); } else { const d = new Date(originalEnd); d.setDate(d.getDate() + dayDiff); t.endDate = formatDate(d); } 
+                    if (t.startDate > t.endDate) { if(type==='start') t.startDate = t.endDate; else t.endDate = t.startDate; } 
+                    saveData(); 
+                }
+                renderCalendarView(); 
+                window.renderSideTasks();
+            }; 
+            document.addEventListener('mousemove', onMove); 
+            document.addEventListener('mouseup', onUp); 
+        }
+
+        window.startTaskDrag = function(e, taskId, fromLongPress = false) {
+            e.preventDefault();
+            const t = DB.tasks.find(x => x.id === taskId);
+            if (!t) return;
+            
+            const globalTooltip = document.getElementById('global-tooltip');
+            if (globalTooltip) {
+                globalTooltip.style.opacity = '0';
+                globalTooltip.style.left = '-9999px';
+                globalTooltip.style.top = '-9999px';
+            }
+            
+            window.isDraggingTask = true; 
+            document.body.classList.add('dragging-active');
+            
+            dragTask = t;
+            const bar = e.target.closest('.task-bar') || e.target.closest('.side-task-card');
+            
+            if (fromLongPress && bar) {
+                bar.classList.add('long-press-active');
+                if(navigator.vibrate) navigator.vibrate(50);
+            }
+
+            const colWidth = document.querySelector('.day-bg-col') ? document.querySelector('.day-bg-col').offsetWidth : 150;
+            let ghostWidth = colWidth - 8; 
+            
+            if (t.startDate && t.endDate) {
+                const taskStart = parseDateStr(t.startDate);
+                const taskEnd = parseDateStr(t.endDate);
+                const totalDays = (taskEnd - taskStart) / (1000 * 60 * 60 * 24) + 1;
+                ghostWidth = totalDays * colWidth - 8;
+            }
+            
+            dragGhost = document.createElement('div');
+            dragGhost.id = 'custom-drag-ghost';
+            dragGhost.style.width = `${ghostWidth}px`;
+            dragGhost.innerHTML = `<i class="fas fa-bars mr-2"></i> ${t.title}`;
+            document.body.appendChild(dragGhost);
+            
+            if (bar) {
+                if (bar.classList.contains('side-task-card')) {
+                    dragOffset = { x: ghostWidth / 2, y: 16 };
+                } else {
+                    const rect = bar.getBoundingClientRect();
+                    dragOffset = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+                }
+            } else {
+                dragOffset = { x: ghostWidth / 2, y: 16 };
+            }
+            
+            dragGhost.style.left = `${e.clientX - dragOffset.x}px`;
+            dragGhost.style.top = `${e.clientY - dragOffset.y}px`;
+            
+            document.addEventListener('mousemove', window.onTaskDragMove);
+            document.addEventListener('mouseup', window.onTaskDragEnd);
+        };
+        
+        window.onTaskDragMove = function(e) {
+            if (!dragGhost) return;
+            dragGhost.style.left = `${e.clientX - dragOffset.x}px`;
+            dragGhost.style.top = `${e.clientY - dragOffset.y}px`;
+        };
+        
+        window.onTaskDragEnd = function(e) {
+            window.isDraggingTask = false;
+            document.body.classList.remove('dragging-active');
+            document.querySelectorAll('.task-bar, .side-task-card').forEach(b => b.classList.remove('long-press-active'));
+            
+            document.removeEventListener('mousemove', window.onTaskDragMove);
+            document.removeEventListener('mouseup', window.onTaskDragEnd);
+            
+            if (dragGhost) {
+                const sidePanel = document.getElementById('urgent-tasks-list')?.parentElement;
+                let droppedOnSidePanel = false;
+                if (sidePanel) {
+                    const rect = sidePanel.getBoundingClientRect();
+                    if (e.clientX >= rect.left && e.clientX <= rect.right && e.clientY >= rect.top && e.clientY <= rect.bottom) {
+                        droppedOnSidePanel = true;
+                    }
+                }
+
+                if (droppedOnSidePanel) {
+                    dragTask.startDate = '';
+                    dragTask.endDate = '';
+                    saveData();
+                    renderCalendarView();
+                    window.renderSideTasks();
+                } else {
+                    let targetDateStr = null;
+                    const rows = document.querySelectorAll('.week-row');
+                    for (let row of rows) {
+                        const rect = row.getBoundingClientRect();
+                        if (e.clientY >= rect.top && e.clientY <= rect.bottom) {
+                            const colWidth = rect.width / 5;
+                            const colIndex = Math.floor((e.clientX - rect.left) / colWidth);
+                            if (colIndex >= 0 && colIndex < 5) {
+                                const colNode = row.querySelectorAll('.day-bg-col')[colIndex];
+                                if (colNode && colNode.dataset.date) {
+                                    targetDateStr = colNode.dataset.date;
+                                }
+                            }
+                            break;
+                        }
+                    }
+                    
+                    if (targetDateStr) {
+                        if (!dragTask.startDate) {
+                            dragTask.startDate = targetDateStr;
+                            dragTask.endDate = targetDateStr;
+                        } else {
+                            const originalStart = parseDateStr(dragTask.startDate);
+                            const originalEnd = parseDateStr(dragTask.endDate);
+                            const diffTime = parseDateStr(targetDateStr).getTime() - originalStart.getTime();
+                            const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+                            
+                            const newStart = new Date(originalStart);
+                            newStart.setDate(originalStart.getDate() + diffDays);
+                            const newEnd = new Date(originalEnd);
+                            newEnd.setDate(originalEnd.getDate() + diffDays);
+                            
+                            dragTask.startDate = formatDate(newStart);
+                            dragTask.endDate = formatDate(newEnd);
+                        }
+                        saveData();
+                        renderCalendarView();
+                        window.renderSideTasks();
+                    }
+                }
+                
+                document.body.removeChild(dragGhost);
+                dragGhost = null;
+                dragTask = null;
+            }
+        };
+        
+        window.startNoteDrag = function(e, noteId, type) {
+            e.dataTransfer.setData('text/plain', noteId);
+            e.dataTransfer.effectAllowed = 'move';
+            if (type === 'note') window.draggedNoteId = noteId;
+            if (type === 'folder') window.draggedFolderId = noteId;
+            const targetEl = e.currentTarget;
+            const ghost = targetEl.cloneNode(true);
+            ghost.style.position = 'absolute'; 
+            ghost.style.top = '-9999px'; 
+            ghost.style.opacity = '1';
+            ghost.style.backgroundColor = '#000000';
+            ghost.style.color = 'white';
+            ghost.style.width = '200px'; 
+            ghost.style.height = '60px'; 
+            ghost.style.overflow = 'hidden';
+            ghost.style.zIndex = '9999';
+            ghost.style.borderRadius = '8px';
+            ghost.className = 'shadow-xl'; 
+            ghost.innerHTML = `<div class="p-4 font-bold flex items-center gap-2"><i class="fas fa-${type === 'note' ? 'file-alt' : 'folder'} text-white"></i> <span class="text-white">移动${type === 'note' ? '笔记' : '文件夹'}</span></div>`;
+            document.body.appendChild(ghost);
+            e.dataTransfer.setDragImage(ghost, 20, 20);
+            setTimeout(() => { document.body.removeChild(ghost); }, 0);
+        };
+
+        function renderWeek(c, dates, cm) { 
+            const row = document.createElement('div'); row.className = 'week-row flex-1'; 
+            dates.forEach(d => { 
+                const dateStr = formatDate(d); const isCur = d.getMonth() === cm; 
+                const col = document.createElement('div'); col.className = `day-bg-col ${isCur?'day-active':'not-current-month'} ${calendarToday===dateStr?'today':''}`;
+                col.dataset.date = dateStr;
+                col.innerHTML = `<div class="day-number-container"><div class="day-number">${d.getDate()}</div></div>${isCur ? `<i class="fas fa-plus-circle add-btn" onclick="window.openAddModal('${dateStr}')"></i>` : ''}`; 
+                if (isCur) { col.onclick = (e) => { if(e.target===col || e.target.classList.contains('day-number')) window.openAddModal(dateStr); }; } 
+                row.appendChild(col); 
+            }); 
+            
+            const tasksInWeek = getTasksInRange(dates[0], dates[4]); const slots = []; const layer = document.createElement('div'); layer.className = 'task-layer'; 
+            tasksInWeek.forEach(t => { 
+                const startDiff = Math.max(0, Math.floor((parseDateStr(t.startDate) - dates[0]) / 86400000)); const endDiff = Math.min(4, Math.floor((parseDateStr(t.endDate) - dates[0]) / 86400000)); const span = endDiff - startDiff + 1; if(span<=0) return; let slotIndex = 0; while(true) { if(!slots[slotIndex]) slots[slotIndex] = Array(5).fill(false); let free=true; for(let i=startDiff; i<startDiff+span; i++) if(slots[slotIndex][i]) free=false; if(free) { for(let i=startDiff; i<startDiff+span; i++) slots[slotIndex][i]=true; break; } slotIndex++; } 
+                const bar = document.createElement('div'); 
+                const isM = t.startDate!==t.endDate; const isVisualStart = parseDateStr(t.startDate) >= dates[0]; const isVisualEnd = parseDateStr(t.endDate) <= dates[4]; 
+                
+                const nextMonday = new Date(dates[4]);
+                nextMonday.setDate(nextMonday.getDate() + 3);
+                const isRealVisualEnd = parseDateStr(t.endDate) < nextMonday;
+
+                let classes = `task-bar ${t.completed?'completed':''}`; if (isM) classes += ' is-multi'; if (isVisualStart) classes += ' is-visual-start'; if (isRealVisualEnd) classes += ' is-end'; 
+                bar.className = classes; bar.style.top = `${slotIndex*36}px`; bar.style.left = `${startDiff*20}%`; bar.style.width = `calc(${span*20}% - 8px)`; bar.style.marginLeft='4px'; 
+                
+                if (isVisualStart) {
+                     bar.innerHTML = `<input type="checkbox" class="custom-checkbox" ${t.completed?'checked':''} onclick="window.toggleTaskStatus('${t.id}',event)"><span class="task-title">${t.title}</span>${t.isUrgent ? '<i class="fas fa-fire ml-1 text-red-500"></i>' : ''}`; 
+                     if(t.desc) bar.setAttribute('data-desc', t.desc);
+                } else {
+                     bar.innerHTML = ''; 
+                     if(t.desc) bar.setAttribute('data-desc', t.desc);
+                }
+                
+                bar.onmousedown = (e) => {
+                    if(e.target.classList.contains('custom-checkbox') || e.target.classList.contains('resize-handle')) return;
+                    isLongPressMode = false;
+                    startClickPos = {x: e.clientX, y: e.clientY};
+                    longPressTimer = setTimeout(() => {
+                        isLongPressMode = true;
+                        window.startTaskDrag(e, t.id, true);
+                    }, 100);
+                };
+                
+                bar.onmousemove = (e) => {
+                    if (!isLongPressMode && longPressTimer) {
+                        const moveDist = Math.sqrt(Math.pow(e.clientX - startClickPos.x, 2) + Math.pow(e.clientY - startClickPos.y, 2));
+                        if (moveDist > 10) { 
+                            clearTimeout(longPressTimer);
+                            longPressTimer = null;
+                        }
+                    }
+                };
+                
+                bar.onmouseup = (e) => {
+                    if (longPressTimer) {
+                        clearTimeout(longPressTimer);
+                        longPressTimer = null;
+                    }
+                };
+
+                if (isVisualStart) { const l = document.createElement('div'); l.className='resize-handle left'; l.draggable = false; l.onmousedown=(e)=>initResize(e, t, 'start', bar); bar.appendChild(l); } 
+                if (isRealVisualEnd) { const r = document.createElement('div'); r.className='resize-handle right'; r.draggable = false; r.onmousedown=(e)=>initResize(e, t, 'end', bar); bar.appendChild(r); } 
+                
+                bar.onclick = (e) => { 
+                    if(e.target.type!=='checkbox' && !e.target.classList.contains('resize-handle') && !isLongPressMode) {
+                        if (!window.isDraggingTask) {
+                            window.openEditModal(t); 
+                        }
+                    }
+                }; 
+                
+                bar.onmouseover = () => { 
+                    if (window.isDraggingTask) return; 
+                    const c='var(--theme-primary)'; 
+                    document.querySelectorAll(`[data-task-id="${t.id}"]`).forEach(it=>{ if(!it.classList.contains('completed')) { it.style.backgroundColor=c; it.style.color='white'; const tit=it.querySelector('.task-title-content'); if(tit){tit.style.backgroundColor=c; tit.style.color='white';} } }) 
+                }; 
+                bar.onmouseout = () => { 
+                    document.querySelectorAll(`[data-task-id="${t.id}"]`).forEach(it=>{ it.style.backgroundColor=''; it.style.color=''; const tit=it.querySelector('.task-title-content'); if(tit){tit.style.backgroundColor=''; tit.style.color='';} }) 
+                }; 
+                bar.setAttribute('data-task-id', t.id); layer.appendChild(bar); 
+            }); 
+            
+            const tasksHeight = slots.length * 36 + 40; 
+            row.dataset.tasksHeight = tasksHeight;
+            row.appendChild(layer); 
+            c.appendChild(row); 
+        }
+        
+        function adjustRowHeights() {
+            const wrapper = document.querySelector('.calendar-wrapper');
+            const scrollContainer = document.querySelector('.calendar-scroll-container');
+            const moduleCalendar = document.getElementById('module-calendar');
+            if (!wrapper || !scrollContainer || !moduleCalendar) return;
+
+            const rows = document.querySelectorAll('.week-row');
+            if (rows.length === 0) return;
+
+            const currentWidth = wrapper.getBoundingClientRect().width;
+            const cellWidth = currentWidth / 5;
+            
+            rows.forEach(row => {
+                const tasksHeight = parseInt(row.dataset.tasksHeight || 0);
+                const finalHeight = Math.max(cellWidth, tasksHeight);
+                if (!isNaN(finalHeight) && finalHeight > 0) {
+                     row.style.minHeight = `${finalHeight}px`;
+                }
+            });
+        }
+
+        function renderCalendarView() { 
+            const y=currentDate.getFullYear(), m=currentDate.getMonth(); 
+            document.getElementById('current-month-display').textContent=`${y}年${m+1}月`; 
+            const pickerTitle = document.getElementById('calendar-picker-title');
+            if (pickerTitle) pickerTitle.textContent = `${y}年`;
+            const pickerGrid = document.getElementById('calendar-month-grid');
+            if (pickerGrid) {
+                const currentValue = `${y}-${String(m + 1).padStart(2, '0')}`;
+                pickerGrid.innerHTML = Array.from({ length: 12 }, (_, index) => {
+                    const monthValue = `${y}-${String(index + 1).padStart(2, '0')}`;
+                    const selected = monthValue === currentValue;
+                    return `<button onclick="window.selectCalendarMonth('${monthValue}')" class="rounded-lg py-2 text-sm ${selected ? 'bg-black text-white' : 'text-gray-600 hover:bg-gray-100'}">${index + 1}月</button>`;
+                }).join('');
+            }
+            const body=document.getElementById('calendar-body'); 
+            const scrollContainer = document.querySelector('.calendar-scroll-container');
+            const prevScrollTop = scrollContainer ? scrollContainer.scrollTop : 0;
+            const fragment = document.createDocumentFragment();
+
+            const fd=new Date(y,m,1); const ld=new Date(y,m+1,0); 
+            let off=fd.getDay()===0?6:(fd.getDay()===6?5:fd.getDay()-1); 
+            let d=new Date(y,m,1-off); 
+            let wc=0; 
+            while(wc<6) { 
+                if(d.getTime()>ld.getTime()&&wc>0) break; 
+                const wd=[]; 
+                for(let i=0;i<7;i++) { 
+                    if(d.getDay()>=1&&d.getDay()<=5) wd.push(new Date(d)); 
+                    d.setDate(d.getDate()+1); 
+                } 
+                if(wd.length) renderWeek(fragment,wd,m); 
+                while(d.getDay()!==1) d.setDate(d.getDate()+1); 
+                wc++; 
+            } 
+            
+            body.replaceChildren(fragment);
+            updateStats(); 
+            adjustRowHeights(); 
+            if (scrollContainer) scrollContainer.scrollTop = prevScrollTop;
+        }
+
+        window.selectCalendarMonth = function(value) {
+            const [year, month] = value.split('-').map(Number);
+            currentDate = new Date(year, month - 1, 1);
+            renderCalendarView();
+            window.closeCalendarMonthPicker();
+        };
+        window.shiftCalendarPickerYear = function(offset) {
+            currentDate = new Date(currentDate.getFullYear() + offset, currentDate.getMonth(), 1);
+            renderCalendarView();
+        };
+        window.toggleCalendarMonthPicker = function(event) {
+            if (event) event.stopPropagation();
+            const picker = document.getElementById('calendar-month-picker');
+            if (picker) picker.classList.toggle('hidden');
+        };
+        window.closeCalendarMonthPicker = function() {
+            const picker = document.getElementById('calendar-month-picker');
+            if (picker) picker.classList.add('hidden');
+        };
+
+        function initCalendar() {
+            calendarToday = formatDate(new Date());
+            renderCalendarView();
+            updateStats();
+            window.renderSideTasks();
+            scheduleCalendarRollover();
+            window.addEventListener('focus', syncCalendarToday);
+            document.addEventListener('visibilitychange', () => { if (!document.hidden) syncCalendarToday(); });
+            const moduleCal = document.getElementById('module-calendar');
+            if (moduleCal) {
+                let lastWidth = 0;
+                let lastHeight = 0;
+                const resizeObserver = new ResizeObserver((entries) => {
+                    window.requestAnimationFrame(() => {
+                        if (!Array.isArray(entries) || !entries.length) return;
+                        const width = entries[0].contentRect.width;
+                        const height = entries[0].contentRect.height;
+                        if (Math.abs(width - lastWidth) > 1 || Math.abs(height - lastHeight) > 1) { 
+                            adjustRowHeights();
+                            lastWidth = width;
+                            lastHeight = height;
+                        }
+                    });
+                });
+                resizeObserver.observe(moduleCal);
+            }
+        }
+
+        window.toggleSidebar = function() {
+            const sb = document.getElementById('sidebar');
+            const btn = document.getElementById('sidebar-toggle-btn');
+            if (sb.classList.contains('collapsed')) {
+                sb.classList.remove('collapsed');
+                btn.className = 'fas fa-chevron-left toggle-btn text-xl';
+                btn.title = "收起";
+            } else {
+                sb.classList.add('collapsed');
+                btn.className = 'fas fa-chevron-right toggle-btn text-xl';
+                btn.title = "展开";
+            }
+        };
+
+        window.saveTaskLive = function() { 
+            const id = document.getElementById('task-id').value; 
+            const title = document.getElementById('task-title').value; 
+            if(!title) return; 
+            const isNew = id.startsWith('-'); 
+            let task = { 
+                id: isNew ? Date.now().toString() : id, 
+                title, 
+                desc: document.getElementById('task-desc').value, 
+                startDate: document.getElementById('task-start-date').value, 
+                endDate: document.getElementById('task-end-date').value, 
+                completed: false,
+                isUrgent: document.getElementById('task-urgent').checked
+            }; 
+            if(isNew) { DB.tasks.push(task); document.getElementById('task-id').value = task.id; } 
+            else { const idx = DB.tasks.findIndex(t => t.id === id); if(idx !== -1) { task.completed = DB.tasks[idx].completed; DB.tasks[idx] = task; } } 
+            saveData();
+            renderCalendarView(); 
+            window.renderSideTasks();
+        };
+
+        function setupModalLiveSaving() { 
+            let saveTimer;
+            const debouncedSave = () => { clearTimeout(saveTimer); saveTimer = setTimeout(() => window.saveTaskLive(), 300); };
+            ['task-title', 'task-desc'].forEach(id => document.getElementById(id).addEventListener('input', debouncedSave)); 
+        }
+
+        window.openPendingListModal = function() {
+            const list = document.getElementById('pending-list-container');
+            list.innerHTML = '';
+            const pending = DB.tasks.filter(t => !t.completed);
+            if (pending.length === 0) list.innerHTML = '<div class="text-center text-gray-400 mt-10">暂无待办事项</div>';
+            else {
+                pending.forEach(t => {
+                    const el = document.createElement('div');
+                    el.className = 'bg-white p-3 rounded-xl border border-gray-100 flex items-center gap-3 shadow-sm pending-item group';
+                    el.innerHTML = `<input type="checkbox" class="custom-checkbox" onclick="window.toggleTaskStatus('${t.id}', event)"><span class="flex-1 text-[#171A1D] text-sm">${t.title}</span><span class="text-xs text-gray-400">${t.startDate || '待定'}</span><button class="delete-btn transition px-2" onclick="window.deletePendingTask('${t.id}')"><i class="fas fa-trash-alt"></i></button>`;
+                    list.appendChild(el);
+                });
+            }
+            window.showModal('pending-list-modal');
+        };
+
+        window.toggleTaskStatus = function(id, e) {
+            if(e) e.stopPropagation();
+            const t = DB.tasks.find(x => x.id === id);
+            if(t) {
+                t.completed = !t.completed;
+                saveData();
+                renderCalendarView();
+                window.renderSideTasks();
+                if(document.getElementById('pending-list-modal').classList.contains('show')) {
+                     const pendingCount = DB.tasks.filter(t => !t.completed).length;
+                     if (pendingCount === 0) window.closeModal('pending-list-modal');
+                     else window.openPendingListModal();
+                }
+            }
+        };
+
+        window.deleteCurrentEditingTask = function() {
+            const id = document.getElementById('task-id').value;
+            if(!id) return;
+            taskToDeleteId = id;
+            deleteSource = 'modal';
+            document.getElementById('confirm-title').innerText = '确认删除';
+            document.getElementById('confirm-msg').innerText = '删除后无法恢复，确定要继续吗？';
+            window.showModal('confirm-modal');
+        };
+        
+        window.deletePendingTask = function(id) {
+            taskToDeleteId = id;
+            deleteSource = 'pending';
+            document.getElementById('confirm-title').innerText = '确认删除';
+            document.getElementById('confirm-msg').innerText = '删除后无法恢复，确定要继续吗？';
+            window.showModal('confirm-modal');
+        };
+
+        function setupGlobalEvents() {
+             document.getElementById('prev-month').onclick = ()=>{ currentDate.setMonth(currentDate.getMonth()-1); renderCalendarView(); };
+             document.getElementById('next-month').onclick = ()=>{ currentDate.setMonth(currentDate.getMonth()+1); renderCalendarView(); };
+             
+             const globalTooltip = document.getElementById('global-tooltip');
+             document.addEventListener('mouseover', (e) => {
+                 const target = e.target.closest('[data-desc]');
+                 if (target && !window.isDraggingTask && !window.isLongPressMode) {
+                     const desc = target.getAttribute('data-desc');
+                     if (desc && globalTooltip) {
+                         globalTooltip.innerHTML = desc.replace(/\n/g, '<br>');
+                         globalTooltip.style.opacity = '0';
+                         globalTooltip.style.left = '0px';
+                         globalTooltip.style.top = '0px';
+                         void globalTooltip.offsetWidth; 
+                         const rect = target.getBoundingClientRect();
+                         let top = rect.top - globalTooltip.offsetHeight - 8;
+                         let left = rect.left + rect.width / 2 - globalTooltip.offsetWidth / 2;
+                         if (top < 10) top = rect.bottom + 8; 
+                         if (left < 10) left = 10;
+                         if (left + globalTooltip.offsetWidth > window.innerWidth - 10) left = window.innerWidth - globalTooltip.offsetWidth - 10;
+                         globalTooltip.style.top = `${top}px`;
+                         globalTooltip.style.left = `${left}px`;
+                         globalTooltip.style.opacity = '1';
+                     }
+                 }
+             });
+
+             document.addEventListener('mouseout', (e) => {
+                 const target = e.target.closest('[data-desc]');
+                 if (target && globalTooltip) {
+                     globalTooltip.style.opacity = '0';
+                     setTimeout(() => { if (globalTooltip.style.opacity === '0') { globalTooltip.style.left = '-9999px'; globalTooltip.style.top = '-9999px'; } }, 150);
+                 }
+             });
+             
+             document.getElementById('confirm-delete-btn').onclick = () => {
+                if (window.currentConfirmAction) { window.currentConfirmAction(); window.currentConfirmAction = null; window.closeModal('confirm-modal'); } 
+                else if (taskToDeleteId) {
+                    DB.tasks = DB.tasks.filter(t => t.id !== taskToDeleteId);
+                    saveData(); renderCalendarView(); window.renderSideTasks(); window.closeModal('confirm-modal');
+                    if (document.getElementById('pending-list-modal').classList.contains('show')) { 
+                        const pendingCount = DB.tasks.filter(t => !t.completed).length;
+                        if (pendingCount === 0) window.closeModal('pending-list-modal');
+                        else window.openPendingListModal();
+                    }
+                    if (deleteSource === 'modal') window.closeModal('task-modal');
+                    taskToDeleteId = null;
+                }
+            };
+            
+             document.addEventListener('click', (e) => {
+                document.getElementById('context-menu').style.display = 'none';
+                if (!e.target.closest('#monthly-summary-month-picker') && !e.target.closest('#monthly-summary-month-trigger')) window.closeMonthlyMonthPicker();
+                if (!e.target.closest('#calendar-month-picker') && !e.target.closest('#current-month-trigger')) window.closeCalendarMonthPicker();
+                const dropdown = document.getElementById('font-size-dropdown');
+                if(dropdown && dropdown.style.display === 'flex' && !dropdown.contains(e.target) && !e.target.closest('.custom-select-trigger')) dropdown.style.display = 'none';
+                document.querySelectorAll('.color-picker-popup.show').forEach(popup => { if (!popup.closest('.color-picker-container').contains(e.target)) popup.classList.remove('show'); });
+            });
+        }
+        
+        window.confirmAction = function(title, msg, actionCallback) {
+            document.getElementById('confirm-title').innerText = title;
+            document.getElementById('confirm-msg').innerText = msg;
+            window.currentConfirmAction = actionCallback;
+            window.showModal('confirm-modal');
+        };
+
+        window.openAddModal = function(d) { 
+            deleteSource='modal'; 
+            document.getElementById('modal-title').innerText = '新建日程'; 
+            document.getElementById('task-id').value='-'+Date.now(); 
+            document.getElementById('task-title').value=''; 
+            document.getElementById('task-desc').value=''; 
+            document.getElementById('task-start-date').value=d; 
+            document.getElementById('task-end-date').value=d; 
+            document.getElementById('task-urgent').checked = false;
+            document.getElementById('btn-delete-in-modal').classList.add('hidden'); 
+            window.showModal('task-modal'); 
+        };
+
+        window.openEditModal = function(t) { 
+            deleteSource='modal'; 
+            document.getElementById('modal-title').innerText = '修改日程'; 
+            document.getElementById('task-id').value=t.id; 
+            document.getElementById('task-title').value=t.title; 
+            document.getElementById('task-desc').value=t.desc; 
+            document.getElementById('task-start-date').value=t.startDate || ''; 
+            document.getElementById('task-end-date').value=t.endDate || ''; 
+            document.getElementById('task-urgent').checked = t.isUrgent || false;
+            document.getElementById('btn-delete-in-modal').classList.remove('hidden'); 
+            window.showModal('task-modal'); 
+        };
+        
+        window.toggleDatepicker = function(iid, cid, ev) { 
+            if (ev) ev.stopPropagation(); 
+            document.querySelectorAll('.custom-datepicker').forEach(p => { if (p.id !== cid) p.classList.add('hidden'); });
+            const p = document.getElementById(cid); 
+            if(p.classList.contains('hidden')) { 
+                datepickerState[iid]=parseDateStr(document.getElementById(iid).value); 
+                window.renderDatepicker(iid, cid); 
+                p.classList.remove('hidden'); 
+            } else p.classList.add('hidden'); 
+        };
+        
+        window.navigateDatepicker = function(id, dir, ev) { if (ev) ev.stopPropagation(); datepickerState[id].setMonth(datepickerState[id].getMonth()+dir); window.renderDatepicker(id, id.replace('task-','').replace('-date','-date-picker')); };
+        window.selectDate = function(id, d) { document.getElementById(id).value=d; document.getElementById(id.replace('task-','').replace('-date','-date-picker')).classList.add('hidden'); window.saveTaskLive(); };
+        window.setupGlobalDatepickerHide = function() { document.body.addEventListener('click', e=>{ if(!e.target.closest('.custom-datepicker') && !e.target.closest('[data-datepicker-container]') && !e.target.closest('.datepicker-nav-btn')) document.querySelectorAll('.custom-datepicker').forEach(p=>p.classList.add('hidden')); }); };
+        window.switchModule = function(moduleName, el, isMobile = false) { document.querySelectorAll('.nav-item, .mobile-nav-item').forEach(i => i.classList.remove('active')); if (el) el.classList.add('active'); const contents = document.querySelectorAll('.module-view'); contents.forEach(v => { v.classList.remove('active'); v.style.display = 'none'; }); const target = document.getElementById(`module-${moduleName}`); if (!target) return; target.classList.add('active'); target.style.display = 'flex'; document.querySelector('.main-content').style.overflowY = 'auto'; if (moduleName === 'calendar') setTimeout(adjustRowHeights, 0); if (moduleName === 'monthly-summary') window.renderMonthlySummary(); };
+        window.switchFolder = function(id) { currentFolderId = id; window.renderNotes(); };
+        window.goBackFolder = function() { const curr = DB.folders.find(f => f.id === currentFolderId); currentFolderId = (curr && curr.parentId) ? curr.parentId : 'default'; window.renderNotes(); };
+        function getTotalNoteCount(folderId) { let count = DB.notes.filter(n => n.folderId === folderId).length; DB.folders.filter(f => f.parentId === folderId).forEach(sub => { count += getTotalNoteCount(sub.id); }); return count; }
+        window.startCreateFolder = function() { window.pendingMerge = { sourceId: null, targetId: null }; window.openFolderModal(); };
+        window.openFolderModal = function(renameId = null) { window.activeFolderId = renameId; const titleEl = document.getElementById('folder-modal-title'); const inputEl = document.getElementById('folder-name-input'); if (renameId) { const f = DB.folders.find(x => x.id === renameId); titleEl.innerText = '重命名文件夹'; inputEl.value = f ? f.name : '文件夹'; } else { titleEl.innerText = '新建文件夹'; inputEl.value = '新建文件夹'; } window.showModal('folder-modal'); setTimeout(() => inputEl.focus(), 100); };
+        
+        window.confirmFolderAction = function() { const name = document.getElementById('folder-name-input').value.trim() || '未命名文件夹'; if (window.activeFolderId) { const f = DB.folders.find(x => x.id === window.activeFolderId); if (f) f.name = name; } else { const newId = 'f_' + Date.now(); DB.folders.push({ id: newId, name: name, parentId: currentFolderId }); if (window.pendingMerge.sourceId && window.pendingMerge.targetId) { const targetNote = DB.notes.find(n => n.id === window.pendingMerge.targetId); const sourceNote = DB.notes.find(n => n.id === window.pendingMerge.sourceId); if (targetNote) targetNote.folderId = newId; if (sourceNote) sourceNote.folderId = newId; } } saveData(); window.renderNotes(); window.closeModal('folder-modal'); };
+
+        window.showContextMenu = function(e, type, id) { e.preventDefault(); e.stopPropagation(); window.contextTarget = { type, id }; const menu = document.getElementById('context-menu'); let html = ''; if (type === 'folder') { html += `<div class="context-menu-item" onclick="window.openFolderModal('${id}')">重命名</div><div class="context-menu-item danger" onclick="window.dissolveFolder('${id}')">解散文件夹</div><div class="context-menu-item danger" onclick="window.deleteFolder('${id}')">删除</div>`; } else if (type === 'note') { if (currentFolderId !== 'default') html += `<div class="context-menu-item" onclick="window.moveNoteToRoot('${id}')">移至首页</div>`; if (currentFolderId !== 'default') { const currFolder = DB.folders.find(f => f.id === currentFolderId); if (currFolder && currFolder.parentId && currFolder.parentId !== 'default') html += `<div class="context-menu-item" onclick="window.moveNoteUp('${id}')">移至上一层级</div>`; } html += `<div class="context-menu-item danger" onclick="window.deleteNoteById('${id}')">删除</div>`; } menu.innerHTML = html; menu.style.display = 'block'; const x = Math.min(e.clientX, window.innerWidth - 150), y = Math.min(e.clientY, window.innerHeight - 100); menu.style.left = x + 'px'; menu.style.top = y + 'px'; };
+        window.moveNoteToRoot = function(id) { const n = DB.notes.find(x => x.id === id); if (n) { n.folderId = 'default'; saveData(); window.renderNotes(); } };
+        window.moveNoteUp = function(id) { const n = DB.notes.find(x => x.id === id); if (n) { const currFolder = DB.folders.find(f => f.id === currentFolderId); n.folderId = currFolder && currFolder.parentId ? currFolder.parentId : 'default'; saveData(); window.renderNotes(); } };
+        window.dissolveFolder = function(id) { window.confirmAction('确认解散', '解散文件夹会将内部所有笔记释放到当前层级，确定吗？', () => { const targetFolder = DB.folders.find(f => f.id === id); if (!targetFolder) return; const parentId = targetFolder.parentId || 'default'; DB.notes.forEach(n => { if (n.folderId === id) n.folderId = parentId; }); DB.folders.forEach(f => { if (f.parentId === id) f.parentId = parentId; }); DB.folders = DB.folders.filter(f => f.id !== id); saveData(); window.renderNotes(); }); };
+        window.deleteFolder = function(id) { window.confirmAction('确认删除', '删除文件夹将同时删除其中的笔记，确定吗？', () => { DB.folders = DB.folders.filter(f => f.id !== id); DB.notes = DB.notes.filter(n => n.folderId !== id); saveData(); window.renderNotes(); }); };
+        window.deleteNoteById = function(id) { window.confirmAction('确认删除', '确认删除此笔记？', () => { DB.notes = DB.notes.filter(n => n.id !== id); saveData(); window.renderNotes(); }); };
+        window.cancelDelete = function() { window.closeModal('confirm-modal'); window.currentConfirmAction = null; taskToDeleteId = null; };
+        window.createNewNote = function() { const id = Date.now().toString(); const newNote = { id: id, title: '', content: '', folderId: currentFolderId, updatedAt: new Date().toISOString() }; DB.notes.unshift(newNote); saveData(); window.renderNotes(); currentNoteId = id; window.openEditor(id, true); };
+        window.openNote = function(id) { currentNoteId = id; window.openEditor(id); };
+        window.openEditor = function(id, isNew = false) { if (!isNew) { const n = DB.notes.find(x => x.id === id); if(!n) return; document.getElementById('note-title-input').value = n.title || ''; document.getElementById('note-content-area').innerHTML = n.content || ''; } else { document.getElementById('note-title-input').value = ''; document.getElementById('note-content-area').innerHTML = ''; document.getElementById('save-status').innerText = '未保存'; } document.getElementById('note-list-view').classList.add('hidden'); document.getElementById('note-editor-view').classList.remove('hidden'); const toolbar = document.getElementById('selection-toolbar'); if (window.isToolbarPinned) { toolbar.classList.add('pinned', 'visible'); document.getElementById('toolbar-pin-btn').classList.add('active'); toolbar.style.top = '0'; toolbar.style.left = '0'; } };
+        window.closeEditor = function() { const idx = DB.notes.findIndex(n => n.id === currentNoteId); if (idx !== -1) { const titleText = document.getElementById('note-title-input').value.trim(), contentText = document.getElementById('note-content-area').innerText.trim(); if (!titleText && !contentText) DB.notes.splice(idx, 1); } saveData(); document.getElementById('note-editor-view').classList.add('hidden'); document.getElementById('note-list-view').classList.remove('hidden'); window.renderNotes(); };
+        window.deleteCurrentNote = function() { if(confirm('确认删除？')) { DB.notes = DB.notes.filter(n => n.id !== currentNoteId); saveData(); window.closeEditor(); } };
+        window.execCmd = function(cmd, val=null) { document.execCommand(cmd, false, val); };
+        window.toggleFontSizeMenu = function() { const menu = document.getElementById('font-size-dropdown'); menu.style.display = (menu.style.display === 'flex') ? 'none' : 'flex'; };
+        window.applyFontSize = function(px) { window.setFontSize(px); document.getElementById('current-font-size').innerText = px; document.getElementById('font-size-dropdown').style.display = 'none'; };
+        window.setFontSize = function(px) { const selection = window.getSelection(); if (!selection.rangeCount || selection.isCollapsed) return; document.execCommand('styleWithCSS', false, false); document.execCommand('fontSize', false, '7'); const fontElements = document.getElementsByTagName("font"); const newSpans = []; Array.from(fontElements).forEach(font => { if (font.getAttribute("size") === "7") { const span = document.createElement("span"); span.style.fontSize = px + "px"; if (font.parentElement && font.parentElement.tagName === 'LI') font.parentElement.style.fontSize = px + 'px'; while (font.firstChild) span.appendChild(font.firstChild); font.parentNode.replaceChild(span, font); newSpans.push(span); } }); const note = DB.notes.find(n => n.id === currentNoteId); if(note) { note.content = document.getElementById('note-content-area').innerHTML; saveData(); } if (newSpans.length > 0) { const newRange = document.createRange(); newRange.setStart(newSpans[0], 0); newRange.setEnd(newSpans[newSpans.length - 1], newSpans[newSpans.length - 1].childNodes.length); selection.removeAllRanges(); selection.addRange(newRange); window.updateToolbarPosition(); } };
+        window.toggleColorPicker = function(e, id) { e.preventDefault(); document.querySelectorAll('.color-picker-popup').forEach(p => { if(p.id !== id) p.classList.remove('show'); }); document.getElementById(id).classList.toggle('show'); };
+        window.toggleToolbarPin = function(e) { e.preventDefault(); window.isToolbarPinned = !window.isToolbarPinned; const toolbar = document.getElementById('selection-toolbar'); if (window.isToolbarPinned) { toolbar.classList.add('pinned', 'visible'); document.getElementById('toolbar-pin-btn').classList.add('active'); toolbar.style.top = '0'; toolbar.style.left = '0'; } else { toolbar.classList.remove('pinned'); document.getElementById('toolbar-pin-btn').classList.remove('active'); window.updateToolbarPosition(); } };
+        window.updateToolbarPosition = function() { const selection = window.getSelection(); const toolbar = document.getElementById('selection-toolbar'), wrapper = document.getElementById('editor-wrapper'); if (window.isToolbarPinned) return; if (selection.rangeCount === 0 || selection.isCollapsed || !document.getElementById('note-content-area').contains(selection.anchorNode)) { toolbar.classList.remove('visible'); return; } const rect = selection.getRangeAt(0).getClientRects()[0]; if (!rect) return; const wrapperRect = wrapper.getBoundingClientRect(); let top = rect.top - wrapperRect.top + wrapper.scrollTop - toolbar.offsetHeight - 8; if (rect.top < wrapperRect.top + toolbar.offsetHeight + 10) top = rect.bottom - wrapperRect.top + wrapper.scrollTop + 8; let left = rect.right - wrapperRect.left - (toolbar.offsetWidth / 2); left = Math.max(20, Math.min(left, wrapperRect.width - toolbar.offsetWidth - 20)); toolbar.style.top = `${Math.max(0, top)}px`; toolbar.style.left = `${left}px`; toolbar.classList.add('visible'); };
+        window.renderDatepicker = function(inputId, containerId) { const container = document.getElementById(containerId); const date = datepickerState[inputId] || new Date(); const year = date.getFullYear(), month = date.getMonth(); const daysInMonth = new Date(year, month + 1, 0).getDate(); let startDay = new Date(year, month, 1).getDay(); if (startDay === 0) startDay = 7; let html = `<div class="datepicker-header"><div class="datepicker-nav-btn" onclick="event.stopPropagation(); window.navigateDatepicker('${inputId}', -1)"><i class="fas fa-chevron-left text-xs"></i></div><div class="font-bold text-sm text-gray-700">${year}年${month+1}月</div><div class="datepicker-nav-btn" onclick="event.stopPropagation(); window.navigateDatepicker('${inputId}', 1)"><i class="fas fa-chevron-right text-xs"></i></div></div><div class="datepicker-grid"><div class="text-xs text-gray-400">一</div><div class="text-xs text-gray-400">二</div><div class="text-xs text-gray-400">三</div><div class="text-xs text-gray-400">四</div><div class="text-xs text-gray-400">五</div>`; let padding = (startDay <= 5) ? startDay - 1 : 0; for(let i=0; i<padding; i++) html += `<div class="datepicker-day not-current-month"></div>`; const valDate = parseDateStr(document.getElementById(inputId).value); for(let d=1; d<=daysInMonth; d++) { const dayOfWeek = new Date(year, month, d).getDay(); if (dayOfWeek === 0 || dayOfWeek === 6) continue; const isSelected = valDate.getDate() === d && valDate.getMonth() === month && valDate.getFullYear() === year; html += `<div class="datepicker-day ${isSelected ? 'selected' : ''}" onclick="event.stopPropagation(); window.selectDate('${inputId}', '${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}')">${d}</div>`; } container.innerHTML = html + `</div>`; };
+        window.showModal = function(id) { document.getElementById(id).classList.remove('hidden'); setTimeout(()=>document.getElementById(id).classList.add('show'), 10); };
+        window.closeModal = function(id) { document.getElementById(id).classList.remove('show'); setTimeout(()=>document.getElementById(id).classList.add('hidden'), 200); };
+
+        /* --- DOM Ready 事件 --- */
+        document.addEventListener('DOMContentLoaded', async () => {
+            let hasSession = false;
+            try { hasSession = await initializeBackendAuth(); } catch (error) { showAuthMessage(error.message || '云端服务初始化失败', true); }
+            if (!hasSession) loginContainer.classList.remove('hidden');
+            document.documentElement.classList.remove('auth-pending');
+            initCalendar();
+            setupGlobalEvents();
+            setupModalLiveSaving();
+            window.renderMonthlySummary();
+            
+            window.setupGlobalDatepickerHide();
+            const colors = ['#000000', '#4B5563', '#9CA3AF', '#EF4444', '#F59E0B', '#10B981', '#3B82F6', '#6366F1', '#8B5CF6', '#EC4899', '#FFFFFF', '#F3F4F6', '#E5E7EB', '#FEE2E2', '#FEF3C7', '#D1FAE5', '#DBEAFE', '#E0E7FF', '#EDE9FE', '#FCE7F3'];
+            const renderColors = (id, command) => { const el = document.getElementById(id); if(!el) return; let html = ''; colors.forEach(c => { html += `<div class="color-swatch" style="background-color: ${c}" onmousedown="event.preventDefault(); window.execCmd('${command}', '${c}')"></div>`; }); el.innerHTML = html; };
+            renderColors('float-text-color', 'foreColor'); renderColors('float-bg-color', 'hiliteColor');
+        });
+    </script>
+</body>
+</html>
