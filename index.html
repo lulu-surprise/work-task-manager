@@ -1276,8 +1276,9 @@
                 urgentTasks.forEach(t => {
                     const el = document.createElement('div');
                     const today = formatDate(new Date());
-                    const isDueToday = t.endDate === today;
-                    el.className = `side-task-card ${isDueToday ? 'bg-red-50 border-red-100 border-l-[3px] border-l-red-500' : 'bg-white border-red-200 border-l-[3px] border-l-red-500'} p-2.5 rounded-lg shadow-sm cursor-grab hover:shadow-md transition relative group`;
+                    // Keep the reminder styling for tasks due today and for overdue tasks.
+                    const isDueOrOverdue = Boolean(t.endDate && t.endDate <= today);
+                    el.className = `side-task-card ${isDueOrOverdue ? 'bg-red-50 border-red-100 border-l-[3px] border-l-red-500' : 'bg-white border-red-200 border-l-[3px] border-l-red-500'} p-2.5 rounded-lg shadow-sm cursor-grab hover:shadow-md transition relative group`;
                     
                     if (t.desc) el.setAttribute('data-desc', t.desc);
                     
@@ -1286,7 +1287,7 @@
                             <div class="font-bold text-[13px] text-gray-800 break-words leading-snug flex-1">${t.title}</div>
                             <i class="fas fa-fire text-red-500 text-[10px] flex-shrink-0 mt-0.5"></i>
                         </div>
-                        ${t.startDate ? `<div class="text-[9px] ${isDueToday ? 'text-red-400 bg-red-100' : 'text-gray-400 bg-gray-50'} mt-1.5 inline-block px-1.5 py-0.5 rounded pointer-events-none break-all"><i class="far fa-calendar-alt"></i> ${t.startDate}</div>` : ''}
+                        ${t.startDate ? `<div class="text-[9px] ${isDueOrOverdue ? 'text-red-400 bg-red-100' : 'text-gray-400 bg-gray-50'} mt-1.5 inline-block px-1.5 py-0.5 rounded pointer-events-none break-all"><i class="far fa-calendar-alt"></i> ${t.startDate}</div>` : ''}
                     `;
                     
                     el.onmousedown = (e) => {
