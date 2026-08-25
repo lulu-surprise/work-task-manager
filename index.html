@@ -1854,35 +1854,39 @@
              document.getElementById('next-month').onclick = ()=>{ currentDate.setMonth(currentDate.getMonth()+1); renderCalendarView(); };
              
              const globalTooltip = document.getElementById('global-tooltip');
-             document.addEventListener('mouseover', (e) => {
-                 const target = e.target.closest('[data-desc]');
-                 if (target && !window.isDraggingTask && !window.isLongPressMode) {
-                     const desc = target.getAttribute('data-desc');
-                     if (desc && globalTooltip) {
-                         globalTooltip.innerHTML = desc.replace(/\n/g, '<br>');
-                         globalTooltip.style.opacity = '0';
-                         globalTooltip.style.left = '0px';
-                         globalTooltip.style.top = '0px';
-                         void globalTooltip.offsetWidth; 
-                         const rect = target.getBoundingClientRect();
-                         let top = rect.top - globalTooltip.offsetHeight - 8;
-                         let left = rect.left + rect.width / 2 - globalTooltip.offsetWidth / 2;
-                         if (top < 10) top = rect.bottom + 8; 
-                         if (left < 10) left = 10;
-                         if (left + globalTooltip.offsetWidth > window.innerWidth - 10) left = window.innerWidth - globalTooltip.offsetWidth - 10;
-                         globalTooltip.style.top = `${top}px`;
-                         globalTooltip.style.left = `${left}px`;
-                         globalTooltip.style.opacity = '1';
-                     }
-                 }
+             const showTaskTooltip = (target) => {
+                 if (!target || !globalTooltip || window.isDraggingTask || window.isLongPressMode) return;
+                 const desc = target.getAttribute('data-desc');
+                 if (!desc) return;
+                 globalTooltip.innerHTML = desc.replace(/\n/g, '<br>');
+                 globalTooltip.style.opacity = '0';
+                 globalTooltip.style.left = '0px';
+                 globalTooltip.style.top = '0px';
+                 void globalTooltip.offsetWidth;
+                 const rect = target.getBoundingClientRect();
+                 let top = rect.top - globalTooltip.offsetHeight - 8;
+                 let left = rect.left + rect.width / 2 - globalTooltip.offsetWidth / 2;
+                 if (top < 10) top = rect.bottom + 8;
+                 if (left < 10) left = 10;
+                 if (left + globalTooltip.offsetWidth > window.innerWidth - 10) left = window.innerWidth - globalTooltip.offsetWidth - 10;
+                 globalTooltip.style.top = `${top}px`;
+                 globalTooltip.style.left = `${left}px`;
+                 globalTooltip.style.opacity = '1';
+             };
+             const hideTaskTooltip = () => {
+                 if (!globalTooltip) return;
+                 globalTooltip.style.opacity = '0';
+                 globalTooltip.style.left = '-9999px';
+                 globalTooltip.style.top = '-9999px';
+             };
+             document.addEventListener('pointerover', (e) => {
+                 const target = e.target instanceof Element ? e.target.closest('[data-desc]') : null;
+                 if (target) showTaskTooltip(target);
              });
-
-             document.addEventListener('mouseout', (e) => {
-                 const target = e.target.closest('[data-desc]');
-                 if (target && globalTooltip) {
-                     globalTooltip.style.opacity = '0';
-                     setTimeout(() => { if (globalTooltip.style.opacity === '0') { globalTooltip.style.left = '-9999px'; globalTooltip.style.top = '-9999px'; } }, 150);
-                 }
+             document.addEventListener('pointerout', (e) => {
+                 const target = e.target instanceof Element ? e.target.closest('[data-desc]') : null;
+                 const next = e.relatedTarget instanceof Node ? e.relatedTarget : null;
+                 if (target && (!next || !target.contains(next))) hideTaskTooltip();
              });
              
              document.getElementById('confirm-delete-btn').onclick = () => {
