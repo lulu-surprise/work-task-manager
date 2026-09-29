@@ -222,7 +222,7 @@
         .datepicker-day.selected { background-color: var(--theme-primary); color: white; font-weight: 600; }
         .datepicker-day:not(.not-current-month):not(.selected):hover { background-color: var(--theme-light); }
         .datepicker-day.not-current-month { color: #E2E4E7; cursor: not-allowed; pointer-events: none; }
-        #custom-drag-ghost { position: fixed; pointer-events: none; z-index: 9999; background-color: var(--theme-primary); color: white; padding: 0 8px; height: 32px; border-radius: 6px; display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; opacity: 0.9; box-shadow: 0 2px 8px rgba(0,0,0,0.15); border: none; }
+        #custom-drag-ghost { position: fixed; left: 0; top: 0; pointer-events: none; z-index: 9999; background-color: var(--theme-primary); color: white; padding: 0 8px; height: 32px; border-radius: 6px; display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; opacity: 0.9; box-shadow: 0 2px 8px rgba(0,0,0,0.15); border: none; will-change: transform; }
         
         .pending-item .delete-btn { opacity: 1; color: #EF4444; }
         .pending-item .delete-btn:hover { color: #DC2626; }
@@ -1083,8 +1083,55 @@
         
         window.isDraggingTask = false;
         let longPressTimer = null;
-        let isLongPressMode = false;
-        let startClickPos = {x:0, y:0};
+        let pendingPressMouseUp = null;
+        let pendingPressMouseMove = null;
+        window.isLongPressMode = false;
+        const TASK_LONG_PRESS_MS = 350;
+        const TASK_DRAG_DISTANCE = 4;
+
+        function beginTaskPress(e, task, onShortClick) {
+            clearTimeout(longPressTimer);
+            if (pendingPressMouseUp) document.removeEventListener('mouseup', pendingPressMouseUp);
+            if (pendingPressMouseMove) document.removeEventListener('mousemove', pendingPressMouseMove);
+            window.isLongPressMode = false;
+            const pressTarget = e.target;
+            const pressPointer = { x: e.clientX, y: e.clientY };
+            let latestPointer = { x: e.clientX, y: e.clientY };
+            const startPressedTaskDrag = (pointer, fromLongPress) => {
+                clearTimeout(longPressTimer);
+                longPressTimer = null;
+                window.isLongPressMode = true;
+                if (pendingPressMouseMove) document.removeEventListener('mousemove', pendingPressMouseMove);
+                pendingPressMouseMove = null;
+                window.startTaskDrag({
+                    target: pressTarget,
+                    clientX: pointer.x,
+                    clientY: pointer.y,
+                    pressClientX: pressPointer.x,
+                    pressClientY: pressPointer.y,
+                    preventDefault() {}
+                }, task.id, fromLongPress);
+            };
+            pendingPressMouseMove = (moveEvent) => {
+                latestPointer = { x: moveEvent.clientX, y: moveEvent.clientY };
+                const distance = Math.hypot(latestPointer.x - pressPointer.x, latestPointer.y - pressPointer.y);
+                if (distance >= TASK_DRAG_DISTANCE) startPressedTaskDrag(latestPointer, false);
+            };
+            pendingPressMouseUp = () => {
+                clearTimeout(longPressTimer);
+                longPressTimer = null;
+                document.removeEventListener('mouseup', pendingPressMouseUp);
+                if (pendingPressMouseMove) document.removeEventListener('mousemove', pendingPressMouseMove);
+                pendingPressMouseUp = null;
+                pendingPressMouseMove = null;
+                if (!window.isLongPressMode && !window.isDraggingTask && onShortClick) onShortClick();
+            };
+            document.addEventListener('mouseup', pendingPressMouseUp);
+            document.addEventListener('mousemove', pendingPressMouseMove);
+            longPressTimer = setTimeout(() => {
+                startPressedTaskDrag(latestPointer, true);
+            }, TASK_LONG_PRESS_MS);
+        }
 
         let currentDate = new Date();
         let calendarToday = formatDate(new Date());
@@ -1290,34 +1337,7 @@
                         ${t.startDate ? `<div class="text-[9px] ${isDueOrOverdue ? 'text-red-400 bg-red-100' : 'text-gray-400 bg-gray-50'} mt-1.5 inline-block px-1.5 py-0.5 rounded pointer-events-none break-all"><i class="far fa-calendar-alt"></i> ${t.startDate}</div>` : ''}
                     `;
                     
-                    el.onmousedown = (e) => {
-                        window.isLongPressMode = false;
-                        startClickPos = {x: e.clientX, y: e.clientY};
-                        longPressTimer = setTimeout(() => {
-                            window.isLongPressMode = true;
-                            window.startTaskDrag(e, t.id, true);
-                        }, 100);
-                    };
-                    el.onmousemove = (e) => {
-                        if (!window.isLongPressMode && longPressTimer) {
-                            const moveDist = Math.sqrt(Math.pow(e.clientX - startClickPos.x, 2) + Math.pow(e.clientY - startClickPos.y, 2));
-                            if (moveDist > 10) { 
-                                clearTimeout(longPressTimer);
-                                longPressTimer = null;
-                                window.isLongPressMode = true;
-                                window.startTaskDrag(e, t.id, false);
-                            }
-                        }
-                    };
-                    el.onmouseup = (e) => {
-                        if (longPressTimer) {
-                            clearTimeout(longPressTimer);
-                            longPressTimer = null;
-                        }
-                        if (!window.isLongPressMode && !window.isDraggingTask) {
-                            window.openEditModal(t);
-                        }
-                    };
+                    el.onmousedown = (e) => beginTaskPress(e, t, () => window.openEditModal(t));
                     urgentList.appendChild(el);
                 });
             }
@@ -1446,14 +1466,15 @@
                     dragOffset = { x: ghostWidth / 2, y: 16 };
                 } else {
                     const rect = bar.getBoundingClientRect();
-                    dragOffset = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+                    const grabX = Number.isFinite(e.pressClientX) ? e.pressClientX : e.clientX;
+                    const grabY = Number.isFinite(e.pressClientY) ? e.pressClientY : e.clientY;
+                    dragOffset = { x: grabX - rect.left, y: grabY - rect.top };
                 }
             } else {
                 dragOffset = { x: ghostWidth / 2, y: 16 };
             }
             
-            dragGhost.style.left = `${e.clientX - dragOffset.x}px`;
-            dragGhost.style.top = `${e.clientY - dragOffset.y}px`;
+            dragGhost.style.transform = `translate3d(${e.clientX - dragOffset.x}px, ${e.clientY - dragOffset.y}px, 0)`;
             
             document.addEventListener('mousemove', window.onTaskDragMove);
             document.addEventListener('mouseup', window.onTaskDragEnd);
@@ -1461,8 +1482,7 @@
         
         window.onTaskDragMove = function(e) {
             if (!dragGhost) return;
-            dragGhost.style.left = `${e.clientX - dragOffset.x}px`;
-            dragGhost.style.top = `${e.clientY - dragOffset.y}px`;
+            dragGhost.style.transform = `translate3d(${e.clientX - dragOffset.x}px, ${e.clientY - dragOffset.y}px, 0)`;
         };
         
         window.onTaskDragEnd = function(e) {
@@ -1595,36 +1615,14 @@
                 
                 bar.onmousedown = (e) => {
                     if(e.target.classList.contains('custom-checkbox') || e.target.classList.contains('resize-handle')) return;
-                    isLongPressMode = false;
-                    startClickPos = {x: e.clientX, y: e.clientY};
-                    longPressTimer = setTimeout(() => {
-                        isLongPressMode = true;
-                        window.startTaskDrag(e, t.id, true);
-                    }, 100);
-                };
-                
-                bar.onmousemove = (e) => {
-                    if (!isLongPressMode && longPressTimer) {
-                        const moveDist = Math.sqrt(Math.pow(e.clientX - startClickPos.x, 2) + Math.pow(e.clientY - startClickPos.y, 2));
-                        if (moveDist > 10) { 
-                            clearTimeout(longPressTimer);
-                            longPressTimer = null;
-                        }
-                    }
-                };
-                
-                bar.onmouseup = (e) => {
-                    if (longPressTimer) {
-                        clearTimeout(longPressTimer);
-                        longPressTimer = null;
-                    }
+                    beginTaskPress(e, t);
                 };
 
                 if (isVisualStart) { const l = document.createElement('div'); l.className='resize-handle left'; l.draggable = false; l.onmousedown=(e)=>initResize(e, t, 'start', bar); bar.appendChild(l); } 
                 if (isRealVisualEnd) { const r = document.createElement('div'); r.className='resize-handle right'; r.draggable = false; r.onmousedown=(e)=>initResize(e, t, 'end', bar); bar.appendChild(r); } 
                 
                 bar.onclick = (e) => { 
-                    if(e.target.type!=='checkbox' && !e.target.classList.contains('resize-handle') && !isLongPressMode) {
+                    if(e.target.type!=='checkbox' && !e.target.classList.contains('resize-handle') && !window.isLongPressMode) {
                         if (!window.isDraggingTask) {
                             window.openEditModal(t); 
                         }
