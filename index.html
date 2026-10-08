@@ -1028,9 +1028,10 @@
             });
             const { data: { session } } = await supabaseClient.auth.getSession();
             if (session && session.user) {
-                await loadUserData(session.user);
+                currentUser = session.user;
                 if (/type=recovery/.test(location.hash + location.search)) enterPasswordRecoveryMode();
                 else loginContainer.classList.add('hidden');
+                loadUserData(session.user).catch(error => console.error('加载云端数据失败:', error));
                 return true;
             }
             return false;
@@ -2082,6 +2083,11 @@
 
         /* --- DOM Ready 事件 --- */
         document.addEventListener('DOMContentLoaded', async () => {
+            const forgotPasswordLink = Array.from(document.querySelectorAll('.auth-options *')).find(element => element.textContent.trim() === '忘记密码？');
+            if (forgotPasswordLink) {
+                forgotPasswordLink.style.cursor = 'pointer';
+                forgotPasswordLink.onclick = (event) => { event.preventDefault(); window.requestPasswordReset(); };
+            }
             let hasSession = false;
             try { hasSession = await initializeBackendAuth(); } catch (error) { showAuthMessage(error.message || '云端服务初始化失败', true); }
             if (!hasSession) loginContainer.classList.remove('hidden');
@@ -2090,11 +2096,6 @@
             setupGlobalEvents();
             setupModalLiveSaving();
             window.renderMonthlySummary();
-            const forgotPasswordLink = Array.from(document.querySelectorAll('.auth-options *')).find(element => element.textContent.trim() === '忘记密码？');
-            if (forgotPasswordLink) {
-                forgotPasswordLink.style.cursor = 'pointer';
-                forgotPasswordLink.onclick = (event) => { event.preventDefault(); window.requestPasswordReset(); };
-            }
             
             window.setupGlobalDatepickerHide();
             const colors = ['#000000', '#4B5563', '#9CA3AF', '#EF4444', '#F59E0B', '#10B981', '#3B82F6', '#6366F1', '#8B5CF6', '#EC4899', '#FFFFFF', '#F3F4F6', '#E5E7EB', '#FEE2E2', '#FEF3C7', '#D1FAE5', '#DBEAFE', '#E0E7FF', '#EDE9FE', '#FCE7F3'];
