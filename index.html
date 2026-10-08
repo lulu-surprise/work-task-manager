@@ -2090,8 +2090,11 @@
             setupGlobalEvents();
             setupModalLiveSaving();
             window.renderMonthlySummary();
-            const forgotPasswordLink = document.querySelector('.auth-options a');
-            if (forgotPasswordLink) forgotPasswordLink.onclick = (event) => { event.preventDefault(); window.requestPasswordReset(); };
+            const forgotPasswordLink = Array.from(document.querySelectorAll('.auth-options *')).find(element => element.textContent.trim() === '忘记密码？');
+            if (forgotPasswordLink) {
+                forgotPasswordLink.style.cursor = 'pointer';
+                forgotPasswordLink.onclick = (event) => { event.preventDefault(); window.requestPasswordReset(); };
+            }
             
             window.setupGlobalDatepickerHide();
             const colors = ['#000000', '#4B5563', '#9CA3AF', '#EF4444', '#F59E0B', '#10B981', '#3B82F6', '#6366F1', '#8B5CF6', '#EC4899', '#FFFFFF', '#F3F4F6', '#E5E7EB', '#FEE2E2', '#FEF3C7', '#D1FAE5', '#DBEAFE', '#E0E7FF', '#EDE9FE', '#FCE7F3'];
