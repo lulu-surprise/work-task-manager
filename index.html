@@ -88,6 +88,10 @@
         .context-menu-item:hover { background-color: #F3F4F6; color: #000000; font-weight: bold; }
         .context-menu-item.danger { color: #000000; font-weight: bold;}
         .context-menu-item.danger:hover { background-color: #000000; color: white;}
+        #context-menu:has(.context-menu-item[onclick*="toggleTaskUrgent"]) { min-width: 210px; padding: 6px; }
+        #context-menu:has(.context-menu-item[onclick*="toggleTaskUrgent"]) .context-menu-item { margin: 2px 0; border-radius: 8px; color: #374151; font-weight: 700; white-space: nowrap; }
+        #context-menu:has(.context-menu-item[onclick*="toggleTaskUrgent"]) .context-menu-item:hover,
+        #context-menu:has(.context-menu-item[onclick*="toggleTaskUrgent"]) .context-menu-item:active { background-color: #F3F4F6; color: #111827; }
 
         /* --- 编辑器样式 (全面黑白化) --- */
         .editor-container { display: flex; flex-direction: column; height: 100%; background: white; width: 100%; position: relative; }
@@ -836,6 +840,7 @@
 
         let supabaseClient = null;
         let currentUser = null;
+        let isPasswordRecoveryMode = false;
         let cloudSaveTimer = null;
         let cloudSyncTimer = null;
         let isCloudSaving = false;
@@ -870,7 +875,17 @@
             const button = document.getElementById('auth-submit-btn');
             button.disabled = busy;
             button.style.opacity = busy ? '.65' : '1';
-            button.innerText = busy ? '请稍候…' : (isLoginMode ? '登 录' : '注 册');
+            button.innerText = busy ? '请稍候…' : (isPasswordRecoveryMode ? '确认修改密码' : (isLoginMode ? '登 录' : '注 册'));
+        }
+
+        function enterPasswordRecoveryMode() {
+            isPasswordRecoveryMode = true;
+            loginContainer.classList.remove('hidden');
+            document.getElementById('auth-title').innerText = '设置新密码';
+            document.getElementById('auth-submit-btn').innerText = '确认修改密码';
+            authAccount.closest('.auth-field').classList.add('hidden');
+            authPassword.value = '';
+            setTimeout(() => authPassword.focus(), 0);
         }
 
         function parseAuthEmail(value) {
@@ -1008,16 +1023,42 @@
                 return false;
             }
             supabaseClient = window.supabase.createClient(config.url, config.anonKey);
+            supabaseClient.auth.onAuthStateChange((event) => {
+                if (event === 'PASSWORD_RECOVERY') enterPasswordRecoveryMode();
+            });
             const { data: { session } } = await supabaseClient.auth.getSession();
             if (session && session.user) {
                 await loadUserData(session.user);
-                loginContainer.classList.add('hidden');
+                if (/type=recovery/.test(location.hash + location.search)) enterPasswordRecoveryMode();
+                else loginContainer.classList.add('hidden');
                 return true;
             }
             return false;
         }
 
         window.handleAuthSubmit = async function() {
+            if (isPasswordRecoveryMode) {
+                const password = authPassword.value;
+                if (password.length < 8) {
+                    showAuthMessage('新密码至少需要 8 位', true);
+                    return;
+                }
+                setAuthBusy(true);
+                try {
+                    const { error } = await supabaseClient.auth.updateUser({ password });
+                    if (error) throw error;
+                    isPasswordRecoveryMode = false;
+                    authAccount.closest('.auth-field').classList.remove('hidden');
+                    history.replaceState(null, '', location.pathname + location.search);
+                    showAuthMessage('密码修改成功，正在进入任务管理器', false);
+                    setTimeout(() => loginContainer.classList.add('hidden'), 800);
+                } catch (error) {
+                    showAuthMessage(error.message || '密码修改失败，请重新打开邮件链接', true);
+                } finally {
+                    setAuthBusy(false);
+                }
+                return;
+            }
             if (isLocalDemoMode && /^\d+$/.test(authAccount.value.trim()) && /^\d+$/.test(authPassword.value)) {
                 authError.classList.remove('show'); authPasswordField.classList.remove('has-error');
                 loginContainer.classList.add('hidden');
@@ -1065,6 +1106,27 @@
                 setTimeout(() => setAuthState('password-active'), 650);
             } finally {
                 setAuthBusy(false);
+            }
+        };
+
+        window.requestPasswordReset = async function() {
+            const email = parseAuthEmail(authAccount.value);
+            if (!email) {
+                showAuthMessage('请先输入需要重置密码的邮箱', true);
+                authAccount.focus();
+                return;
+            }
+            if (!supabaseClient) {
+                showAuthMessage('云端服务尚未配置', true);
+                return;
+            }
+            try {
+                const redirectTo = location.protocol === 'file:' ? location.href.split('#')[0] : `${location.origin}${location.pathname}`;
+                const { error } = await supabaseClient.auth.resetPasswordForEmail(email, { redirectTo });
+                if (error) throw error;
+                showAuthMessage('密码重置邮件已发送，请查收邮箱', false);
+            } catch (error) {
+                showAuthMessage(error.message || '重置邮件发送失败，请稍后重试', true);
             }
         };
 
@@ -1351,7 +1413,8 @@
                         ${t.startDate ? `<div class="text-[9px] ${dateStyle} mt-1.5 inline-block px-1.5 py-0.5 rounded pointer-events-none break-all"><i class="far fa-calendar-alt"></i> ${t.startDate}</div>` : ''}
                     `;
                     
-                    el.onmousedown = (e) => beginTaskPress(e, t, () => window.openEditModal(t));
+                    el.onmousedown = (e) => { if (e.button === 0) beginTaskPress(e, t, () => window.openEditModal(t)); };
+                    el.oncontextmenu = (e) => window.showContextMenu(e, 'task', t.id);
                     urgentList.appendChild(el);
                 });
             }
@@ -1628,9 +1691,11 @@
                 }
                 
                 bar.onmousedown = (e) => {
+                    if(e.button !== 0) return;
                     if(e.target.classList.contains('custom-checkbox') || e.target.classList.contains('resize-handle')) return;
                     beginTaskPress(e, t);
                 };
+                bar.oncontextmenu = (e) => window.showContextMenu(e, 'task', t.id);
 
                 if (isVisualStart) { const l = document.createElement('div'); l.className='resize-handle left'; l.draggable = false; l.onmousedown=(e)=>initResize(e, t, 'start', bar); bar.appendChild(l); } 
                 if (isRealVisualEnd) { const r = document.createElement('div'); r.className='resize-handle right'; r.draggable = false; r.onmousedown=(e)=>initResize(e, t, 'end', bar); bar.appendChild(r); } 
@@ -1990,7 +2055,9 @@
         
         window.confirmFolderAction = function() { const name = document.getElementById('folder-name-input').value.trim() || '未命名文件夹'; if (window.activeFolderId) { const f = DB.folders.find(x => x.id === window.activeFolderId); if (f) f.name = name; } else { const newId = 'f_' + Date.now(); DB.folders.push({ id: newId, name: name, parentId: currentFolderId }); if (window.pendingMerge.sourceId && window.pendingMerge.targetId) { const targetNote = DB.notes.find(n => n.id === window.pendingMerge.targetId); const sourceNote = DB.notes.find(n => n.id === window.pendingMerge.sourceId); if (targetNote) targetNote.folderId = newId; if (sourceNote) sourceNote.folderId = newId; } } saveData(); window.renderNotes(); window.closeModal('folder-modal'); };
 
-        window.showContextMenu = function(e, type, id) { e.preventDefault(); e.stopPropagation(); window.contextTarget = { type, id }; const menu = document.getElementById('context-menu'); let html = ''; if (type === 'folder') { html += `<div class="context-menu-item" onclick="window.openFolderModal('${id}')">重命名</div><div class="context-menu-item danger" onclick="window.dissolveFolder('${id}')">解散文件夹</div><div class="context-menu-item danger" onclick="window.deleteFolder('${id}')">删除</div>`; } else if (type === 'note') { if (currentFolderId !== 'default') html += `<div class="context-menu-item" onclick="window.moveNoteToRoot('${id}')">移至首页</div>`; if (currentFolderId !== 'default') { const currFolder = DB.folders.find(f => f.id === currentFolderId); if (currFolder && currFolder.parentId && currFolder.parentId !== 'default') html += `<div class="context-menu-item" onclick="window.moveNoteUp('${id}')">移至上一层级</div>`; } html += `<div class="context-menu-item danger" onclick="window.deleteNoteById('${id}')">删除</div>`; } menu.innerHTML = html; menu.style.display = 'block'; const x = Math.min(e.clientX, window.innerWidth - 150), y = Math.min(e.clientY, window.innerHeight - 100); menu.style.left = x + 'px'; menu.style.top = y + 'px'; };
+        window.showContextMenu = function(e, type, id) { e.preventDefault(); e.stopPropagation(); window.contextTarget = { type, id }; const menu = document.getElementById('context-menu'); let html = ''; if (type === 'folder') { html += `<div class="context-menu-item" onclick="window.openFolderModal('${id}')">重命名</div><div class="context-menu-item danger" onclick="window.dissolveFolder('${id}')">解散文件夹</div><div class="context-menu-item danger" onclick="window.deleteFolder('${id}')">删除</div>`; } else if (type === 'note') { if (currentFolderId !== 'default') html += `<div class="context-menu-item" onclick="window.moveNoteToRoot('${id}')">移至首页</div>`; if (currentFolderId !== 'default') { const currFolder = DB.folders.find(f => f.id === currentFolderId); if (currFolder && currFolder.parentId && currFolder.parentId !== 'default') html += `<div class="context-menu-item" onclick="window.moveNoteUp('${id}')">移至上一层级</div>`; } html += `<div class="context-menu-item danger" onclick="window.deleteNoteById('${id}')">删除</div>`; } else if (type === 'task') { const task = DB.tasks.find(t => t.id === id); if (!task) return; html += `<div class="context-menu-item" onclick="window.toggleTaskUrgent('${id}')"><i class="fas fa-fire mr-2 text-red-500"></i>${task.isUrgent ? '取消标注重要紧急' : '标注重要紧急'}</div><div class="context-menu-item danger" onclick="window.deleteTaskFromContext('${id}')"><i class="fas fa-trash-alt mr-2"></i>删除任务</div>`; } menu.innerHTML = html; menu.style.display = 'block'; const x = Math.min(e.clientX, window.innerWidth - 190), y = Math.min(e.clientY, window.innerHeight - 100); menu.style.left = x + 'px'; menu.style.top = y + 'px'; };
+        window.toggleTaskUrgent = function(id) { const task = DB.tasks.find(t => t.id === id); if (!task) return; task.isUrgent = !task.isUrgent; saveData(); renderCalendarView(); window.renderSideTasks(); window.renderMonthlySummary(); };
+        window.deleteTaskFromContext = function(id) { const task = DB.tasks.find(t => t.id === id); if (!task) return; window.confirmAction('确认删除', `确定删除任务“${task.title || '未命名任务'}”吗？删除后无法恢复。`, () => { DB.tasks = DB.tasks.filter(t => t.id !== id); saveData(); renderCalendarView(); window.renderSideTasks(); window.renderMonthlySummary(); }); };
         window.moveNoteToRoot = function(id) { const n = DB.notes.find(x => x.id === id); if (n) { n.folderId = 'default'; saveData(); window.renderNotes(); } };
         window.moveNoteUp = function(id) { const n = DB.notes.find(x => x.id === id); if (n) { const currFolder = DB.folders.find(f => f.id === currentFolderId); n.folderId = currFolder && currFolder.parentId ? currFolder.parentId : 'default'; saveData(); window.renderNotes(); } };
         window.dissolveFolder = function(id) { window.confirmAction('确认解散', '解散文件夹会将内部所有笔记释放到当前层级，确定吗？', () => { const targetFolder = DB.folders.find(f => f.id === id); if (!targetFolder) return; const parentId = targetFolder.parentId || 'default'; DB.notes.forEach(n => { if (n.folderId === id) n.folderId = parentId; }); DB.folders.forEach(f => { if (f.parentId === id) f.parentId = parentId; }); DB.folders = DB.folders.filter(f => f.id !== id); saveData(); window.renderNotes(); }); };
@@ -2023,6 +2090,8 @@
             setupGlobalEvents();
             setupModalLiveSaving();
             window.renderMonthlySummary();
+            const forgotPasswordLink = document.querySelector('.auth-options a');
+            if (forgotPasswordLink) forgotPasswordLink.onclick = (event) => { event.preventDefault(); window.requestPasswordReset(); };
             
             window.setupGlobalDatepickerHide();
             const colors = ['#000000', '#4B5563', '#9CA3AF', '#EF4444', '#F59E0B', '#10B981', '#3B82F6', '#6366F1', '#8B5CF6', '#EC4899', '#FFFFFF', '#F3F4F6', '#E5E7EB', '#FEE2E2', '#FEF3C7', '#D1FAE5', '#DBEAFE', '#E0E7FF', '#EDE9FE', '#FCE7F3'];
